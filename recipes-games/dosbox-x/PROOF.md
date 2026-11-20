@@ -218,8 +218,8 @@ is why the seat tree looks the way it does.
 
 ## The gallery dump of the two Descents, and why it is a crop
 
-- the seat's gallery pairs live at `/gamedata/installs/shots/gallery/descent1-demo` and
-  `descent2-demo`, taken from the confs `/gamedata/run/d1w.conf` and `d2w.conf` with the
+- the seat's gallery pairs live at `/gamedata/installs/shots/gallery/descent1` and
+  `descent2`, taken from the confs `/gamedata/run/d1w.conf` and `d2w.conf` with the
   briefing films skipped by a walk of ten/twelve Enters plus one Escape - the Escape is what
   jumps the flight-officer film into the mine cockpit the game opens play on
 - the engine cannot fill the seat's screen, so the layer's `shots/descent1-demo.png` and
