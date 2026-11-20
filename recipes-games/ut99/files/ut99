@@ -1,0 +1,104 @@
+#!/bin/sh
+# Launcher for Unreal Tournament 99 on the seat: the GOTY CD1 data tree and
+# OldUnreal's 469f arm64 engine, installed by the ut99 recipe at /gamedata/ut.
+#
+# The engine is started from inside its own tree: every path in
+# UnrealTournament.ini is relative (../System/*.u, ../Maps/*.unr, ...), so the
+# current directory is what decides which game is opened. It is started at the
+# final size the ini names (1920x1080, SoftDrv): the engine ignores -fullscreen
+# and asks the compositor for a plain window ("RequestFullscreen 0"), and a
+# resolution change at runtime crashes it in USDLViewport::Repaint, so the size
+# has to be right before the first frame. Weston's Ctrl+Shift+F is what makes
+# that window scan out fullscreen.
+#
+# The renderer is SoftDrv on purpose. The seat has Vivante EGL 1.5 / GLES 3.1
+# and no libGL.so.1 anywhere, so OpenGLDrv cannot load; XOpenGLDrv does get a
+# GLES 3.1 context but Vivante's GLSL ES 3.10 compiler rejects its shaders
+# outright ("Unrecognizable interface block qualifier" for the driver's
+# out/in blocks, and its DrawTile uniform block is over GL ES 3.1's per-stage
+# budget), and VulkanDrv finds no device that meets its minimum. SoftDrv is the
+# renderer that draws today; TODO.md next to this script carries the compiler's
+# own error log and what it would take to replace this.
+#
+# One instance only, and that is load-bearing: two UT99 processes on this seat
+# played music and the other players' sounds, but the player's own weapon and
+# footsteps were silent. A clean single-instance restart restored them. The
+# flock below refuses a second launcher, and the pgrep guard catches a ut-bin
+# that was started without this script.
+#
+# Environment:
+#   UT99_DIR         data+engine tree, default /gamedata/ut
+#   UT99_MAP         map URL to open, default DM-Deck16][ bot deathmatch
+#   UT99_ARGS        extra engine arguments, word-split on purpose
+#   UT99_SYSTEM_SDL3 1 = prefer the seat's SDL 3.5.0 over the bundled one
+#
+# A map URL may also be the first argument; the rest is passed to the engine.
+
+UT99_DIR=${UT99_DIR:-/gamedata/ut}
+UT99_MAP=${UT99_MAP:-DM-Deck16][.unr?game=BotPack.DeathMatchPlus?difficulty=3}
+
+if [ ! -x "$UT99_DIR/System/ut-bin" ]; then
+    echo "ut99: no engine at $UT99_DIR/System/ut-bin" >&2
+    echo "ut99: set UT99_DIR or install the ut99 package first" >&2
+    exit 1
+fi
+if [ ! -f "$UT99_DIR/System/UnrealTournament.ini" ]; then
+    echo "ut99: no $UT99_DIR/System/UnrealTournament.ini" >&2
+    exit 1
+fi
+
+# One launcher at a time. The lock is held by file descriptor 9 until the
+# engine exits, because exec replaces this shell.
+exec 9>/tmp/ut99.lock
+if ! flock -n 9; then
+    echo "ut99: already running (lock /tmp/ut99.lock)" >&2
+    exit 1
+fi
+if pgrep -x ut-bin >/dev/null 2>&1; then
+    echo "ut99: a ut-bin process is already running" >&2
+    exit 1
+fi
+
+# The seat's weston runs with its runtime directory in the user's home rather
+# than under /run/user, and its socket there is named wayland-1, so an ssh
+# shell that only knows the default wayland-0 gets nothing: without both the
+# right XDG_RUNTIME_DIR and WAYLAND_DISPLAY the engine dies in SDL with
+# "Couldn't initialize SDL: wayland not available". Take the first runtime
+# directory that actually holds a weston socket.
+: "${XDG_RUNTIME_DIR:=$HOME}"
+for _rd in "$XDG_RUNTIME_DIR" "$HOME" "/run/user/$(id -u)"; do
+    if [ -n "$_rd" ]; then
+        for _wd in wayland-1 wayland-0; do
+            if [ -S "$_rd/$_wd" ]; then
+                XDG_RUNTIME_DIR=$_rd
+                WAYLAND_DISPLAY=$_wd
+                break 2
+            fi
+        done
+    fi
+done
+export XDG_RUNTIME_DIR
+export WAYLAND_DISPLAY
+export SDL_VIDEODRIVER=wayland
+export SDL_VIDEO_DRIVER=wayland
+export SDL_AUDIODRIVER=alsa
+export SDL_AUDIO_DRIVER=alsa
+
+# The bundled SDL 3.4.10 cannot bring EGL up on this seat; the system SDL
+# 3.5.0 can. LD_LIBRARY_PATH wins over the engine's $ORIGIN RUNPATH, and any
+# library not found there still falls back to $ORIGIN, so only the SDL objects
+# are replaced. This is the switch for trying the GLES renderers again.
+if [ "$UT99_SYSTEM_SDL3" = "1" ]; then
+    LD_LIBRARY_PATH=/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+    export LD_LIBRARY_PATH
+fi
+
+if [ -n "$1" ]; then
+    UT99_MAP=$1
+    shift
+fi
+
+cd "$UT99_DIR" || exit 1
+# -log keeps the run's UnrealTournament.log in the engine's preference
+# directory (~/.utpg/System) instead of only on stdout.
+exec ./System/ut-bin "$UT99_MAP" -log $UT99_ARGS "$@"

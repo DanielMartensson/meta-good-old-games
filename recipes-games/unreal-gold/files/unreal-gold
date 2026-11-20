@@ -1,0 +1,128 @@
+#!/bin/sh
+# Launcher for Unreal / Unreal Gold on the seat.
+#
+# What runs is a hybrid, and that is the whole point of this recipe: the
+# engine is OldUnreal's 469f arm64 Unreal Tournament binary (ut-bin), and the
+# content is Unreal Gold's (the 1998 campaign's maps, textures, sounds and
+# music off the Unreal Gold CD). It is a hybrid because the seat cannot run
+# Unreal Gold's own engine at all: the 227k arm64 Unreal patch ships only
+# OpenGLDrv.so and XOpenGLDrv.so, and on this Vivante both die (XOpenGLDrv
+# compiles nothing, its DrawTile shaders need interface blocks and a 2.8 kB
+# uniform block GL ES 3.1's compiler refuses, and OpenGLDrv dlopens
+# libGL.so.1, which the seat's blob does not ship). The 469 line is the only
+# UE1 binary on this seat that has a renderer which draws, SoftDrv, and
+# SoftDrv is an accepted choice here. The 469 tarball carries no Unreal 1
+# the game comes out of Gold's data and the UT packages that ship with 469
+# (UnrealShare.u, UnrealI.u), which are the Unreal 1 classes in the layout
+# 469 expects. README.md next to this script carries the measured load-error
+# list for the alternatives, and the reason the front-end is UT99's menu
+# rather than Gold's own.
+#
+# The engine is started from inside its own tree: every path in
+# UnrealTournament.ini is relative (../System/*.u, ../Maps/*.unr), so the
+# current directory decides which game opens.
+#
+# One instance only, and that is load-bearing rather than cosmetic: two UE1
+# processes on this seat played music and other players' sounds while the
+# player's own weapon and footsteps went silent. The flock refuses a second
+# launcher and the pgrep guard catches an engine started without this script.
+#
+# Environment:
+#   UG_DIR     the hybrid tree, default /gamedata/ugt
+#   UG_MAP     map URL to open, default Unreal.unr, the game's own intro
+#   UG_RES     internal render size as WxH, default 800x600
+#   UG_ARGS    extra engine arguments, word-split on purpose
+#
+# A map URL may also be the first argument; the rest goes to the engine.
+#
+# UG_RES is the internal resolution the software renderer draws at; weston
+# scales that window to the 1920x1080 panel. 800x600 is what the seat's owner
+# plays at: it was measured sharper than 1280x720 and 960x540 on this panel.
+# Size is rewritten in the ini before the first frame, never at runtime: a
+# viewport change after the engine has drawn crashes it in
+# USDLViewport::Repaint.
+
+UG_DIR=${UG_DIR:-/gamedata/ugt}
+UG_MAP=${UG_MAP:-Unreal.unr}
+UG_RES=${UG_RES:-800x600}
+
+# the internal size the software renderer draws at, and the map to open
+case $UG_RES in
+    *[!0-9x]*|"") echo "unreal-gold: UG_RES wants WxH, e.g. 800x600" >&2; exit 1 ;;
+esac
+UGX=${UG_RES%x*}
+UGY=${UG_RES#*x}
+if [ -z "$UGX" ] || [ -z "$UGY" ] || [ "$UGX" = "$UG_RES" ]; then
+    echo "unreal-gold: UG_RES wants WxH, e.g. 800x600" >&2
+    exit 1
+fi
+
+if [ ! -x "$UG_DIR/System/ut-bin" ]; then
+    echo "unreal-gold: no engine at $UG_DIR/System/ut-bin" >&2
+    echo "unreal-gold: install the unreal-gold package or set UG_DIR" >&2
+    exit 1
+fi
+if [ ! -f "$UG_DIR/System/UnrealTournament.ini" ]; then
+    echo "unreal-gold: no $UG_DIR/System/UnrealTournament.ini" >&2
+    exit 1
+fi
+
+# One launcher at a time; the lock is held on fd 9 until the engine exits.
+exec 9>/tmp/unreal-gold.lock
+if ! flock -n 9; then
+    echo "unreal-gold: already running (lock /tmp/unreal-gold.lock)" >&2
+    exit 1
+fi
+# -f rather than -x: the tree's ut-bin is a symlink to ut-bin-arm64, so the
+# running process is named after the target and -x on "ut-bin" matches nothing.
+if pgrep -f "System/ut-bin" >/dev/null 2>&1; then
+    echo "unreal-gold: an engine process is already running" >&2
+    exit 1
+fi
+
+# The seat's weston keeps its runtime directory in the user's home and its
+# socket is wayland-1, so a plain ssh shell has to be pointed at both or SDL
+# dies with "Couldn't initialize SDL: wayland not available".
+: "${XDG_RUNTIME_DIR:=$HOME}"
+for _rd in "$XDG_RUNTIME_DIR" "$HOME" "/run/user/$(id -u)"; do
+    if [ -n "$_rd" ]; then
+        for _wd in wayland-1 wayland-0; do
+            if [ -S "$_rd/$_wd" ]; then
+                XDG_RUNTIME_DIR=$_rd
+                WAYLAND_DISPLAY=$_wd
+                break 2
+            fi
+        done
+    fi
+done
+export XDG_RUNTIME_DIR
+export WAYLAND_DISPLAY
+export SDL_VIDEODRIVER=wayland
+export SDL_VIDEO_DRIVER=wayland
+export SDL_AUDIODRIVER=alsa
+export SDL_AUDIO_DRIVER=alsa
+
+# Internal resolution, written before the engine starts. Only the
+# [SDLDrv.SDLClient] section is touched: the ini carries a FullscreenViewport
+# pair for every renderer, and SoftDrv is the one that binds. The size is set
+# here rather than only in the shipped ini so that a change on the seat cannot
+# leave the engine starting at a size it then tries to change at runtime, which
+# is the crash in USDLViewport::Repaint.
+awk -v x="$UGX" -v y="$UGY" '
+    /^\[/ { sec = $0 }
+    sec == "[SDLDrv.SDLClient]" && /^FullscreenViewportX=/ { print "FullscreenViewportX=" x; next }
+    sec == "[SDLDrv.SDLClient]" && /^FullscreenViewportY=/ { print "FullscreenViewportY=" y; next }
+    { print }
+' "$UG_DIR/System/UnrealTournament.ini" > "$UG_DIR/System/UnrealTournament.ini.new" || exit 1
+mv "$UG_DIR/System/UnrealTournament.ini.new" "$UG_DIR/System/UnrealTournament.ini"
+
+if [ -n "$1" ]; then
+    UG_MAP=$1
+    shift
+fi
+
+cd "$UG_DIR" || exit 1
+# -log keeps the run's log in the engine's preference directory
+# (~/.utpg/System) next to the save games, which is where its crash dumps
+# land too.
+exec ./System/ut-bin "$UG_MAP" -log $UG_ARGS "$@"

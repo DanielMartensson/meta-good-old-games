@@ -1,0 +1,13 @@
+diff --git a/code/qcommon/files.c b/code/qcommon/files.c
+index b3b9f1e..131083e 100644
+--- a/code/qcommon/files.c
++++ b/code/qcommon/files.c
+@@ -3694,7 +3694,7 @@ static void FS_CheckPak0( void )
+ 	else
+ 		installPath = fs_basepath->string;
+ 
+-	if(!com_standalone->integer && (foundPak & ((1<<NUM_ID_PAKS)-1)) != ((1<<NUM_ID_PAKS)-1))
++	if(!com_standalone->integer && Q_stricmp( fs_gamedirvar->string, "demoq3" ) && (foundPak & ((1<<NUM_ID_PAKS)-1)) != ((1<<NUM_ID_PAKS)-1))
+ 	{
+ 		char errorText[MAX_STRING_CHARS] = "";
+ 		char gamePath[MAX_OSPATH];

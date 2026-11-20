@@ -1,0 +1,77 @@
+From 89f21b499dd1dd528cb41f9ca5d4c0c7df676b36 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Fri, 13 Nov 2026 15:29:47 +0100
+Subject: [PATCH] build the qvm tools with the build machine's own compiler,
+ not the cross one
+
+qvm_tools is a sub-project of build-time programs: lburg expands dagcheck.md
+into the C file q3rcc is linked with, and q3lcc/q3rcc/q3cpp/q3asm turn the
+game sources into Q3VM bytecode. Its ExternalProject CMAKE_ARGS list did not
+say which compiler those programs want, so they inherited the parent cache
+cross compiler and got linked as target binaries: the configure and link of
+q3asm and lburg succeeded and then running lburg stopped the build with
+"Exec format error". Clearing the inherited compiler, flags, sysroot and
+toolchain file is what asks for the sub-build upstream does for its own
+release artifacts. Q3VM bytecode is an interpreter format, so the .qvm
+modules the seat loads are the same bytes whichever machine compiled them.
+---
+ cmake/utils/qvm_tools.cmake | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/cmake/utils/qvm_tools.cmake b/cmake/utils/qvm_tools.cmake
+index 82e4d69..4e3d6f6 100644
+--- a/cmake/utils/qvm_tools.cmake
++++ b/cmake/utils/qvm_tools.cmake
+@@ -12,6 +12,41 @@ if(CMAKE_BUILD_TYPE)
+     set(BUILD_TYPE_ARG -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+ endif()
+ 
++# The five programs this sub-project builds are run by the build machine, not
++# by the machine this tree is being compiled for: cmake/tools/CMakeLists.txt:83
++# pipes lburg into the C file q3rcc is linked with at :88, and the add_qvm
++# custom commands below run q3lcc, q3rcc, q3cpp and q3asm over the game
++# sources to make the .qvm files. That is what ${HOST_EXECUTABLE_SUFFIX} at
++# :15-:18 already says they are. Left alone, though, ExternalProject hands
++# this sub-build the parent cache compiler, flags, sysroot and toolchain file,
++# so the sub-build links binaries for the target: configuring and linking
++# q3asm and lburg succeed, and then the first thing that has to run, lburg,
++# stops the build with "Exec format error" because the host cannot exec a
++# target binary. Clearing those settings is what asks for the sub-build to
++# be a build of the build machine, which is exactly how upstream builds
++# these tools for its own release artifacts (.github/workflows/build.yml:67-
++# :71 and :185 are a bare cmake, no cross compiler at all). What they emit is
++# Q3VM bytecode, an interpreter format that code/qcommon/vm_interpreted.c
++# reads wherever the game runs, so the .qvm files are the same bytes no
++# matter which machine compiled them.
++#
++# A cross-building environment such as a distribution build system says which
++# compiler the build machine is with BUILD_CC and gives BUILD_CPPFLAGS and
++# BUILD_CFLAGS for the flags its own tools get; outside one, BUILD_CC is empty
++# and cmake falls back to its own compiler probe, which is what a plain
++# upstream build gets.
++set(QVM_HOST_CC "$ENV{BUILD_CC}")
++set(QVM_HOST_CPPFLAGS "$ENV{BUILD_CPPFLAGS}")
++set(QVM_HOST_CFLAGS "$ENV{BUILD_CFLAGS}")
++set(QVM_HOST_LDFLAGS "$ENV{BUILD_LDFLAGS}")
++string(STRIP "${QVM_HOST_CC}" QVM_HOST_CC)
++set(QVM_HOST_C_ARGS
++    "-DCMAKE_C_COMPILER=${QVM_HOST_CC}"
++    "-DCMAKE_C_FLAGS=${QVM_HOST_CPPFLAGS} ${QVM_HOST_CFLAGS}"
++    "-DCMAKE_C_LINK_FLAGS=${QVM_HOST_LDFLAGS}"
++    "-DCMAKE_SYSROOT="
++    "-DCMAKE_TOOLCHAIN_FILE=")
++
+ set(Q3RCC ${TOOLS_DIR}/$<CONFIG>/q3rcc${HOST_EXECUTABLE_SUFFIX})
+ set(Q3CPP ${TOOLS_DIR}/$<CONFIG>/q3cpp${HOST_EXECUTABLE_SUFFIX})
+ set(Q3LCC ${TOOLS_DIR}/$<CONFIG>/q3lcc${HOST_EXECUTABLE_SUFFIX})
+@@ -25,6 +60,7 @@ ExternalProject_Add(qvm_tools
+         -DCMAKE_MODULE_PATH=${CMAKE_MODULE_PATH}
+         -DCMAKE_MINIMUM_REQUIRED_VERSION=${CMAKE_MINIMUM_REQUIRED_VERSION}
+         ${BUILD_TYPE_ARG}
++        ${QVM_HOST_C_ARGS}
+     BUILD_ALWAYS TRUE
+     BUILD_BYPRODUCTS ${Q3RCC} ${Q3CPP} ${Q3LCC} ${Q3ASM}
+     INSTALL_COMMAND "")
+-- 
+2.43.0
+

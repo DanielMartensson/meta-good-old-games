@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Thu, 12 Nov 2026 12:40:00 +0100
+Subject: [PATCH] quake3: accept the demo's UI API version 3
+
+The Quake III Arena 1.11 demo ships vm/ui.qvm built against the API 3 UI
+header.  id only ever added UI traps at the end of the enum after that
+release, so the API 3 UI runs fine against FTE's API 4/6 trap table - it
+is the same table ioquake3 exposes to old mods.  FTE's UI_Start rejected
+anything but 4 or 6, which killed the demo menu and left the client with
+a spawned-but-empty listen server (no menu means nothing ever issues the
+connect).  Accept 3 as well.
+
+Also note that the demo's vm/cgame.qvm is API 3 and FTE's CG_Start has no
+version check, so only the UI needed relaxing.
+---
+ plugins/quake3/clq3_ui.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/quake3/clq3_ui.c b/plugins/quake3/clq3_ui.c
+index 7a1b2c3..8d4e5f6 100644
+--- a/plugins/quake3/clq3_ui.c
++++ b/plugins/quake3/clq3_ui.c
+@@ -1844,7 +1844,7 @@ void UI_Start (void)
+ 	if (uivm)
+ 	{
+ 		apiversion = vmfuncs->Call(uivm, UI_GETAPIVERSION, 6);
+-		if (apiversion != 4 && apiversion != 6)	//make sure we can run the thing
++		if (apiversion != 3 && apiversion != 4 && apiversion != 6)	//make sure we can run the thing (3 = q3 1.11 demo UI)
+ 		{
+ 			Con_Printf("User-Interface VM uses incompatible API version (%i)\n", apiversion);
+ 			vmfuncs->Destroy(uivm);
+-- 
+2.43.0
