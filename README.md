@@ -17,7 +17,7 @@ own under its release name.
 ## The games
 
 Every start frame the seat has, one sheet. Note: No game data is distributed in this git repo. 
-This is only a collection of yocto recipies to install open source emulators, open source game engines and open source streaming. 
+This is only a collection of yocto recipies to install open source emulators, open source game engines, open/free source payloads games and open source streaming. 
 
 ![Every game at the frame it opens on](shots/meta-good-old-games-all-starts.jpg)
 
