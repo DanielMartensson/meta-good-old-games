@@ -4,10 +4,6 @@ The good old games that run on embedded systems e.g STM32MP25x. The repository i
 **one branch per Yocto release**: the branch carries the whole layer for that
 series, and `main` is only this index page.
 
-Every start frame the seat has, one sheet:
-
-![Every game at the frame it opens on](shots/meta-good-old-games-all-starts.jpg)
-
 ## Branches
 
 | Branch | What is in it |
@@ -19,6 +15,11 @@ No other release branch exists yet; a new Yocto release gets a branch of its
 own under its release name.
 
 ## The games
+
+Every start frame the seat has, one sheet. Note: No game data is distributed in this git repo. 
+This is only a collection of yocto recipies to install open source emulators, open source game engines and open source streaming. 
+
+![Every game at the frame it opens on](shots/meta-good-old-games-all-starts.jpg)
 
 | Game | What it is | Licence | Branch |
 | --- | --- | --- | --- |
@@ -44,32 +45,6 @@ own under its release name.
 | id's Unreal / Unreal Gold | Gold's 1998 campaign run by that same 469f binary, at `/gamedata/ugt` | not free: Epic's Terms of Service, personal use only | `scarthgap` |
 | id's Dark and Darker | streamed by OpenNOWLite off the host's CloudMatch servers, so nothing is ever downloaded here | free to play only, never free to download | `scarthgap` |
 | Destiny 2 | the same stream, the same reason | free to play only, never free to download | `scarthgap` |
-
-## Where the instructions are
-
-Every recipe on its branch has two documents beside it: a `README.md` that says
-only how the package gets onto the seat - `dpkg -i` for a package that lives
-under `/usr`, `dpkg-deb -x` for a tree that has to sit on the seat's `/gamedata`
-mount - and the actual command that runs the game, with the switches that change
-map, skill, renderer or window size; and a `PROOF.md` that carries the pins, the
-sizes, the checksums, the measured rounds and the failure modes.
-
-The games above that say **by hand** are not payload recipes, and that is a
-decision and not an omission: a payload is only a recipe when its download
-source is one the rights holder authorizes, and the only carrier on hand for
-id's shareware and demo episodes is id's old `idstuff` corner as mirrored by a
-third party at `gwdg.de`, which nobody from id answers for. Those engines -
-`chocolate-doom`, `fteqw`, `ioquake3`, `eduke32`, `openjazz`, `dosbox-x` and
-`xash3d-fwgs` - stay the recipes, and their READMEs carry the rest: the payload's
-pinned name, size and md5, where to put your own copy at `/gamedata/games/<game>/`
-on the seat's data mount rather than in its nearly full root filesystem, and the
-exact command the proof round ran. The seat's own copies of those payloads are
-kept, and nothing here re-downloads them.
-
-[NOTES.md](NOTES.md) carries the layer's long notes, and the `scarthgap` branch's
-`games-table.md` carries the whole shelf - the games the seat plays, the games
-that are not a recipe and the reason in one line, and the games that are free
-both ways but have no payload on hand yet.
 
 ## Start here
 
