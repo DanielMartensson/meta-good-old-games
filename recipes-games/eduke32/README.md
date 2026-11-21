@@ -33,14 +33,16 @@ Getting a copy: 3D Realms' own site still carries its shareware release of Episo
 and the archive is a self-extractor two layers deep, so unpack it yourself:
 
 ```bash
-curl -LO 'https://dukeworld.duke4.net/classic%20dukeworld/share/3dduke13.zip'   # 5,924,374 B
+curl -LO 'https://dukeworld.duke4.net/classic%20dukeworld/share/3dduke13.zip'   # the shareware release
 unzip 3dduke13.zip                                  # LICENSE.TXT, INSTALL.EXE, FILE_ID.DIZ, DN3DSW13.SHR
-unzip DN3DSW13.SHR -d duke3d                        # the 17-member v1.3d release, 12,833,604 B
+unzip DN3DSW13.SHR -d duke3d                        # the 17-member v1.3d release
 mkdir -p /gamedata/games/duke3d && mv duke3d/* /gamedata/games/duke3d/
 ```
 
 `DN3DSW13.SHR` is a PKWARE self-extracting archive (an MZ header plus PKLITE-compressed
-members with a zip directory record appended), so an ordinary zip reader opens it. Keep
+members with a zip directory record appended), so an ordinary zip reader opens it. The
+release's own byte counts and hashes are in `PROOF.md` beside this recipe rather than here.
+Keep
 the seven files above and drop the ten the seat has no use for: `DUKE3D.EXE`, `SETUP.EXE`,
 `SETMAIN.EXE`, `COMMIT.EXE`, `DN3DHELP.EXE`, `DEMO1.DMO`/`DEMO2.DMO`/`DEMO3.DMO`,
 `MODEM.PCK`, `ULTRAMID.INI`.

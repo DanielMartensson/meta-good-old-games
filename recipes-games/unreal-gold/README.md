@@ -5,7 +5,7 @@
     /gamedata/ugt             Gold's 1998 campaign (Maps/, Textures/, Sounds/,
                               Music/) under OldUnreal's 469f arm64 engine in
                               System/ - 882 MB
-    /gamedata/ugt/System/ut-bin   the engine: the same 214,424-byte aarch64 PIE
+    /gamedata/ugt/System/ut-bin   the engine: the same aarch64 PIE the ut99 recipe ships
     /usr/bin/unreal-gold      the launcher
 
 It is a hybrid on purpose: Gold's own engine cannot draw here at all, so the

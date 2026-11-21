@@ -9,7 +9,7 @@ bitbake openjazz
 The `arm64` deb goes to the seat with `dpkg -i`. It installs the engine only:
 
 ```
-/usr/bin/OpenJazz    the engine: one C++ SDL2 program, 397,160 B, GPL-2
+/usr/bin/OpenJazz    the engine: one C++ SDL2 program, GPL-2
 ```
 
 Jazz Jackrabbit 1 is a 1994 Epic MegaGames platformer whose DOS binary (x86 `JAZZ.EXE`,

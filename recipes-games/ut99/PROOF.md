@@ -25,6 +25,8 @@ result is not published, sold or handed on.
 | Configuration | `files/UnrealTournament.ini` | SoftDrv, 1920x1080 |
 | Launcher | `files/ut99` | one instance, wayland + alsa, 1920x1080 |
 
+The engine the seat runs is one binary rather than two: `/gamedata/ut/System/ut-bin` at 214,424 B,
+an aarch64 PIE, and the same file the unreal-gold recipe installs at `/gamedata/ugt/System/ut-bin`.
 `do_extract_gamedata` puts the two halves together, in that order, with `bsdtar`
 from `libarchive-native` taking the ISO (libarchive's ISO9660 reader, Rock Ridge
 names kept, which is what keeps the disc's MixedCase `System/`, `Maps/`, ...):

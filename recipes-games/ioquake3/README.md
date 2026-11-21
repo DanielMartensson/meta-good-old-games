@@ -32,8 +32,8 @@ mv ~/pak0.pk3 /usr/share/ioquake3/baseq3/pak0.pk3
 # id's 1.11 demo: keep its own tree name, and the launcher's default is one +set away
 mkdir -p /usr/share/ioquake3/demoq3
 mv linuxq3ademo-1.11-6.x86.gz.sh /usr/share/ioquake3/demoq3   # unpack it yourself:
-                                                              # a gzip inside a shell script, whose payload
-                                                              # is a zip of 1,387 entries / 79,243,450 bytes
+                                                              # a gzip inside a shell script; the payload's
+                                                              # counts and hashes live in PROOF.md
 /usr/bin/ioquake3 +map q3dm7 +set fs_game demoq3
 ```
 

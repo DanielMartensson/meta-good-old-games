@@ -71,6 +71,9 @@ is not used at all (UT99 has no such package).
 | Configuration | `files/UnrealTournament.ini` | SoftDrv, 800x600 internal |
 | Launcher | `files/unreal-gold` | one instance, wayland + alsa, 800x600 |
 
+The engine is the one binary both UE1 recipes ship: `/gamedata/ugt/System/ut-bin` at 214,424 B, an
+aarch64 PIE, identical to the ut99 recipe's `/gamedata/ut/System/ut-bin`.
+
 `do_extract_gamedata` puts the four together in a written order rather than in
 bitbake's: the UT99 disc's `System/`, `Maps/`, `Music/`, `Sounds/`, `Textures/`
 and `Help/ReadMe.htm` first (`bsdtar` from `libarchive-native`, whose ISO9660

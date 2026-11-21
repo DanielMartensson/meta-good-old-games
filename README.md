@@ -41,8 +41,8 @@ And one rule this round adds, about where the game data comes from:
 | --- | --- | --- |
 | LibreQuake v0.09-beta, the free Quake data | `librequake` | free: BSD-3 for the data, GPL-2 for the gamecode |
 | OpenArena 0.8.8, the free Quake III-style game | `openarena` | free: GPL-2 for program and data |
-| Unreal Tournament 99 GOTY, on OldUnreal's 469f arm64 engine at `/gamedata/ut` | `ut99` | not free: Epic's Terms of Service, a personal build of the owner's own copy, not redistributed |
-| Unreal / Unreal Gold at `/gamedata/ugt`, the same 469f binary | `unreal-gold` | not free: Epic's Terms of Service, personal use only |
+| Unreal Tournament 99 GOTY, on OldUnreal's 469f arm64 engine at `/gamedata/ut` | `ut99` | free to download and play only: Epic's Terms of Service, a personal build of the owner's own copy, not redistributed |
+| Unreal / Unreal Gold at `/gamedata/ugt`, the same 469f binary | `unreal-gold` | free to download and play only: Epic's Terms of Service, personal use only |
 
 Both Unreal recipes fetch the engine from OldUnreal's own releases on
 `github.com/OldUnreal`, which is where the patches keep getting updated, and the

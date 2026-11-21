@@ -4,7 +4,8 @@
 
     /gamedata/ut            the GOTY CD1 data (Maps/, Textures/, Sounds/, Music/)
                             under OldUnreal's 469f arm64 engine in System/
-    /gamedata/ut/System/ut-bin   the engine: a 214,424-byte aarch64 PIE
+    /gamedata/ut/System/ut-bin   the engine: an aarch64 PIE, the same binary the
+                                 ut99 and unreal-gold recipes both ship
     /usr/bin/ut99           the launcher
 
 The tree is 686 MB, so it does not go under `/usr`: the seat's 4.2 GB root
