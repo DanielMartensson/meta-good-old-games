@@ -239,6 +239,52 @@ including the `YDOTOOL_SOCKET=/tmp/.ydotool_socket` line, which is where the sea
 daemon would have attached and nothing does, and anything after it is engine command-line
 (`+map t0a0` is the release's trainer level, `+map hldemo1` its first mission map).
 
+## The gallery pair of 2026-11-21 - the trainer map, and the byte-identical pair that is not a parked game
+
+The owner played Uplink at the seat's own keyboard and mouse and answered that it works 100 %, so
+this is the last round this game needs and the only thing owed was the gallery pair. The round ran
+as one run of the game, `/gamedata/run/uplink-sweep.sh t0a0 half-life-uplink-xash`, whose engine
+call is the seat's own `/gamedata/run/xash-uplink.sh +map t0a0` verbatim: the engine prints its own
+args as `-game valve -rodir /gamedata/games/half-life-uplink -ref gles3compat -width 1024 -height
+576 -dev 2 -noch +map t0a0` with `/gamedata/games/uplink-writable is working directory now`, and
+`Adding PAK: /gamedata/games/half-life-uplink/valve/pak0.PAK (1952 files)` with the wads and
+`Adding ZIP: valve/extras.pk3 (151 files)`. The console is `/gamedata/logs/gallery-half-life-uplink-xash.txt`
+70,804 B, and its first lines are SDL's own probe spam - `Failed loading wl_egl_window_create:
+/usr/lib/libwayland-client.so.0: undefined symbol: _wl_egl_window_create` and the `xkb_*` lines
+beside it, SDL 2 trying its wayland bridge through `dlopen` - which is not what the engine draws
+through and which the round's own `GL2_ShimInit` line answers after. The driver waits for that
+renderer line and for `lighting: colored` before it presses the shutter, so the pair cannot be the
+menu the game opens on. What the game then printed is its own in-game state: `Spawn Server: t0a0`,
+`loading maps/t0a0.bsp`, `lighting: colored`, and the trainer's scripted events firing in order -
+`Found: func_door, firing (startdoor)`, `Found: scripted_sentence, firing (sent_intro)` with
+`Playing sentence !HOLO_INTRO (3.0)` and `Playing sentence !HOLO_BUTTON (4.0)`, `Found: func_door,
+firing (td1)`. The seat's scene graph gives the window as `top-level window 'Half-Life' of xash3d`
+at `role xdg_toplevel`, surface ID 31.
+
+| Shot | colours | non-black | row lum | mid-row jumps | md5 |
+| --- | --- | --- | --- | --- | --- |
+| `start.png` 1,016,434 B | 16,000 | 2,073,513 | 12.5-26.5 | 3 | `f5c25d8714f9a62a899d28aea81ea840` |
+| `idle.png` 1,016,434 B, +15.2 s, nothing pressed | 16,000 | 2,073,513 | 12.5-26.5 | 3 | `f5c25d8714f9a62a899d28aea81ea840` |
+| `after1.png` 1,036,632 B, one mouse jump earlier | 14,740 | 2,073,599 | 12.4-29.0 | 1 | `1bf73beb47d6098626ed077ebbf52e3b` |
+| `after2.png` 1,036,632 B, +6.2 s, nothing pressed | 14,740 | 2,073,599 | 12.4-29.0 | 1 | `1bf73beb47d6098626ed077ebbf52e3b` |
+
+| Pair | identical | >8 | columns / rows moved |
+| --- | --- | --- | --- |
+| `start` vs `idle` | 2,073,600 (100.0 %) | 0 | 0 and 0 |
+| `after1` vs `after2` | 2,073,600 (100.0 %) | 0 | 0 and 0 |
+| either of the first pair vs either of the second | 7,646 (0.4 %) | 1,006,935 (48.6 %) | **270** / 1,920 and **21** / 1,080 |
+
+What that says, and what it does not: both idle pairs are byte-identical, so the two shots of each
+pair are the same frame, and that is read as the game's own **still view of a live game**, not as a
+parked menu - the console named the map, loaded it and had the trainer's scripted speaker and its
+doors firing before the shutter was pressed, and nothing was pressed between the shots of a pair.
+The pair that does change is the one whose input is named: the driver sent exactly one
+`ydotool mousemove 1500 300`, which SDL's relative mouse mode takes as one whole delta, and the view
+under it moved by 270 of 1,920 columns and 21 of 1,080 rows of the coarse shape with 48.6 % of the
+pixels past a max-channel difference of 8. Only that pair may be read as the camera, and the layer's
+rule says so in the driver's own comment. The gallery pair this game ships is the `start`/`idle` one;
+the two `after` shots stay beside it under their own probe names.
+
 ## Failure modes
 
 | Symptom | Cause |

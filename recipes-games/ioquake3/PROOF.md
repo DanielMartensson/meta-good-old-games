@@ -152,6 +152,48 @@ drew 136,766 distinct colours with 2,072,380 of 2,073,600 non-black and 92.7 % o
 moved over a mouse sweep. The engine swap is what made the same payload draw. Full record in
 `../fteqw/PROOF.md`.
 
+### The gallery pair of 2026-11-21 - the seat's own hands on the game, then the pair on disk
+
+The owner started this game at the seat's own keyboard and mouse and played it, and answered that
+it works 100 %, so no round after this one was run on it: what it owed was the gallery pair the
+layer's rule asks for. `/gamedata/run/gallery-q3.sh q3dm7 demoq3 ioquake3`, console
+`/gamedata/logs/gallery-quake3-ioquake3.txt` 849 lines, pair
+`/gamedata/installs/shots/gallery/quake3-ioquake3/{start,idle}.png`, two shots 15.6 s apart. The
+launch is the README's own line, `IOQUAKE3_BASEPATH=/gamedata/games/quake3
+IOQUAKE3_HOME=/tmp/ioq3-quake3-ioquake3 /usr/bin/ioquake3 +map q3dm7 +set fs_game demoq3`, and the
+engine named the payload and the surface before it drew anything: `/gamedata/games/quake3/demoq3/vm-pure.pk3
+(3 files)` and `/gamedata/games/quake3/demoq3/pak0.pk3 (1387 files)`, `...setting mode -1: 1024 576`,
+`GL_RENDERER: Vivante GCNANOULTRA31_VIP2` and `GL_VENDOR: Vivante Corporation`. The in-game state is
+the game's own print rather than the driver's: the `------------ Map Loading ------------` block answers
+`loaded maps/q3dm7.aas`, `found 67 level items` and `6 bots parsed` beside `Server: q3dm7`, and then
+`UnnamedPlayer^7 entered the game` with the next line `UnnamedPlayer^7 does a back flip into the lava.`,
+which is q3dm7's own hazard saying the player is standing in the arena. The audio started cleanly -
+`SDL audio driver is "alsa".` then `SDL audio initialized.`, with **0** lines matching `resource busy`,
+which is the one-process-at-a-time trap of the round of 2026-11-15 not being in this round's way. The
+only refusals are the four sounds the demo does not ship (`assist.wav`, `defense.wav`,
+`hgrenb1a`/`hgrenb2a`, the last two twice each because the round runs two of that map's fights), which
+is what the payload check above says to expect.
+
+| Shot | colours | non-black | row lum | mid-row jumps | md5 |
+| --- | --- | --- | --- | --- | --- |
+| `start.png` 1,376,116 B | 118,294 | 2,039,198 | 12.7-87.8 | 15 | `ab798bf71c53f4a064579761d52fe5e5` |
+| `idle.png` 1,364,509 B, +15.6 s, nothing pressed | 115,718 | 2,038,794 | 12.7-83.2 | 15 | `b547c9e94dd2556e200482fa7461561c` |
+
+| Pair | identical | >8 | columns / rows moved |
+| --- | --- | --- | --- |
+| `start` vs `idle` | 1,903,404 (91.8 %) | 114,983 (5.5 %) | 66 / 1,920 and **0** / 1,080 |
+
+What that says: with nothing pressed between the shots, 5.5 % of the frame changed and not one
+row of the coarse shape moved, so the view stayed where it was and the game's own animation - a
+light or a moving model - is what moved. Only the driver's own presses are on the record, and they
+stopped by itself: the ladder polls the log for `Entering the game|InitGame|Spawn:|Player joined|Player
+connected` and breaks at the first hit, so the Enter and the click that are in this round never had to
+do anything once the engine had already said `entered the game`. Unlike the DOS rounds there is no
+FPS readout beside this pair: the seat's scene graph gives the window as `'ioquake3' of ioquake3-gl2`,
+ioquake3 puts no readout in its title, so the proof that this game is alive is its own console - which
+named the arena, loaded it and put the player in it before the first shot was taken - and the proof
+that the pair is not a menu is that the driver stopped pressing at that same line.
+
 ## What the payload would be, if a hand install goes through id's own release
 
 Recorded so a hand install of the same bytes can be checked against them - this layer fetches

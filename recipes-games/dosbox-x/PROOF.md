@@ -317,6 +317,7 @@ own `/proc` record:
 | `d1f.conf` | the same `(0, 0) -> (1920, 1048)` | the same xbrz, `frameskip = 2` | 3-5 | 24-54% | - |
 | `d1win.conf` | `(586, 12) -> (906, 212)`, a 320x200 window | the same xbrz | 7-19 | 87-100% | 92-98% of one core |
 | `d1s.conf` | the same `(0, 0) -> (1920, 1048)` | `scaler = none` | 10-20 | 99-101% | 92-94% of one core |
+| `d1win.conf` of the 15:00 round | a 320x200 window whose own rect that round never captured - `weston-debug scene-graph` printed the `View` lines and the title, no geometry, and the run's log answers `LOG: Configured windowposition: -` | the same xbrz, at `maximize = false` + `windowresolution = 640x400` | 5-10 steady, 33 and 38 at the two shots | 69-96% | - |
 
 The maximised window is not slow because the panel is big. `d1s.conf` keeps the window
 the whole panel and takes the scaler out, and it runs 10-20 fps with the DOS side at
@@ -379,6 +380,46 @@ same 640x400 DOS picture, at `1142,295..1781,694` for Descent 1 and `969,439..16
 2 - and stretched that crop to 1920x1080, which is the emulator's own `aspect = false` look. What
 replaced it is the `maximize = true` measurement above, which needs no after-the-fact crop at all.
 
+### The window's own rate, read again on the afternoon of Nov 21 2026
+
+The windowed route was measured a second time, by its own driver `/gamedata/run/round-nov21-d1window.sh`,
+against the fill conf with only two keys moved: `maximize = false` and `windowresolution = 640x400`
+(the DOS raster is 320x200 and the xbrz fixed scale factor is 2, so 640x400 is that raster scaled at
+1:1). `output = surface`, `scaler = xbrz_bilinear forced`, `machine = vgaonly`, `core = dynamic` and
+`cycles = 10000` are byte-identical to the maximised conf, so the only variable is the presentation
+surface. The run's own log says the ask is ignored exactly as the earlier windowed row says -
+`LOG: surface consider=720x540 final=720x540` for the DOS text mode, then `LOG: surface consider=320x200
+final=320x200` once Descent switches the DOS side to Mode 13 - beside `LOG: Configured windowposition: -`
+and the same `SDL_PIXELFORMAT_RGB888` / `24 bpp` complaint. What this round adds is the **rate** at that
+window, read off the emulator's own title while the ship sat in its mine: the parked menu read
+`FPS 0, 100%/RT`, the Enter ladder and the two Escapes that jump the briefing film put the ship in the
+mine and the readout went to `FPS 38, 94%/RT`, then `FPS 33, 69%/RT` at the moment of `start.png` and
+`FPS 8, 93%/RT` at the moment of `idle.png`, with the six steady probes that followed reading `FPS 7/7/9/5/10/9`
+at 96/93/88/95/92/91 % of real time. At this window the DOS side is not starved by the scaler - 88-96 %
+of real time against the 21-55 % the maximised window gets at the same scaler - which is what the 53,200
+px against 1,464,056 px of that destination box, measured above, predicts.
+
+| Shot | colours | non-black | row lum | mid-row jumps | md5 |
+| --- | --- | --- | --- | --- | --- |
+| `start.png` 187,924 B | 7,309 | 2,052,182 | 30.0-224.0 | 199 | `f22561cd80444dc0d8a6523903948a03` |
+| `idle.png` 193,251 B, +17.0 s, nothing pressed | 5,559 | 2,059,504 | 30.0-224.0 | 131 | `e7abcd84d47256c0c785a08b90b70848` |
+
+| Pair | identical | >8 | columns / rows moved |
+| --- | --- | --- | --- |
+| `start` vs `idle` | 2,021,806 (97.5 %) | 50,494 (2.4 %) | 26 / 1,920 and **0** / 1,080 |
+
+Two honest notes on that pair. It is a capture of the whole panel rather than a crop of the window, and
+the shot's own colour counts say so: the wallpaper's navy `(3,35,75)` covers 1,281,530 px of the 2,073,600
+and its gold `(255,210,0)` covers 413,227 px, so the 320x200 window sits somewhere inside those fields.
+This round never captured the window's own rect - `weston-debug scene-graph 400ms` printed the `View`
+lines with the window's title and no geometry for it - which is why the row above states the two
+`consider=` sizes rather than a rectangle. And **nothing at all** was pressed between the two shots, so
+the mine's own animation is what moved 2.5 % of the panel and 26 of 1,920 columns of the coarse shape
+with **not one row** of it moved, while the readout went from FPS 33 to FPS 8: unlike the earlier rounds,
+which flew the ship with a held Right arrow to make a pair animate at all, this pair is the game's own
+motion. It stays under its probe tag `/gamedata/installs/shots/window/d1win/` rather than a gallery name,
+because a 320x200 window in the middle of the panel is not the whole-panel fill the gallery rule asks for.
+
 ## Failure modes
 
 | Symptom | Cause |
@@ -435,9 +476,14 @@ all switches the tree's own `configure.ac` already has. `dosbox-x_git.bb` builds
       21-55% of real time, and this route answers only two sizes - the DOS raster's own 320x200 window
       and the maximised 1920x1048 one, since the windowed run's own log says `consider=320x200` against
       a `windowresolution = 640x400` ask - so a middle size needs an output that does hardware scaling,
-      and `--disable-opengl` took that output out of this build. Two levers the tree still offers have
-      not been measured on the seat: the emulator's own `scanline render on demand` hint and the window's
-      24 bpp `SDL_PIXELFORMAT_RGB888` surface, which the run itself calls out as
+      and `--disable-opengl` took that output out of this build. What the same afternoon read back is
+      which of the two sizes does play: at the same xbrz scaler the 320x200 window keeps the DOS side at
+      69-96 % of real time and reads FPS 5-10 steady with 33 and 38 at the two moving shots against the
+      3-5 fps and the 21-55 % the maximised window gets at that scaler, so the rate is the window's and
+      the fill is the panel's, and the pair that window left is a whole-panel capture at
+      `/gamedata/installs/shots/window/d1win/` with the window's own rect never read. Two levers the tree
+      still offers have not been measured on the seat: the emulator's own `scanline render on demand` hint
+      and the window's 24 bpp `SDL_PIXELFORMAT_RGB888` surface, which the run itself calls out as
       `You are running in 24 bpp mode, this will slow down things!`
 
 ## The debs this branch builds (built 2026-11-20 from this tree)

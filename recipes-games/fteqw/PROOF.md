@@ -223,6 +223,39 @@ to the full release: that name is in neither the loose tree nor `pak0.pak`, and 
 first-person blaster the shots show drew anyway. 61.0 fps steady at 1024x576 in the
 launcher-defaults ladder (32.8 at 1280x720, 14.0 at 1920x1080).
 
+### The Quake II gallery pair, on the seat's own `baseq2` tree (round of 2026-11-21)
+
+The owner played this game at the seat's own keyboard and mouse and answered that it works 100 %,
+so the round of the same day is the last one this game needs. `/gamedata/run/gallery-q2.sh demo1
+quake2-fteqw`, console `/gamedata/logs/gallery-quake2-fteqw.txt` 63,544 lines of `WAYLAND_DEBUG=1`
+protocol, pair `/gamedata/installs/shots/gallery/quake2-fteqw/{start,idle}.png`,
+two shots 15.5 s apart. The launch line is the launcher's own defaults plus the map:
+`/usr/bin/fteqw-gles -basedir /gamedata/games/quake2 -game baseq2 -quake2 -updatesrc '' -set
+vid_gl_context_es 1 -set vid_fullscreen 1 -set vid_width 1024 -set vid_height 576 -set pr_ssqc_memsize
+16m -set pr_csqc_memsize 16m +wait 3 +map demo1`, and the console answers the whole path the game
+takes: `Setting mode 1024*576 16bpp OpenGLES2+`, `GL_RENDERER: Vivante GCNANOULTRA31_VIP2`,
+`Initing default SDL audio device.`, `OpenGLES2+ renderer initialized`, `------- Quake II Initialized
+-------`, `==== InitGame ====`, `41 entities inhibited`, `1 teams with 2 entities`. The engine's own
+surface is `wl_surface@19`, which carries 4,848 `.commit()` lines and 6,540 `.damage` lines over the
+run - the tally is quoted as a count, since these logs' timestamps are uptime-based and the gap
+between the two shots is not readable off them.
+
+| Shot | colours | non-black | row lum | mid-row jumps | md5 |
+| --- | --- | --- | --- | --- | --- |
+| `start.png` 1,185,032 B | 24,315 | 2,069,505 | 10.8-33.6 | 9 | `f07a7c967174509aca1dc2fad8c6eb77` |
+| `idle.png` 1,181,039 B, +15.5 s, nothing pressed | 24,525 | 2,069,404 | 11.3-33.6 | 9 | `2a2d2dabb2658cc7dd7fdf0686e2f471` |
+
+| Pair | identical | >8 | columns / rows moved |
+| --- | --- | --- | --- |
+| `start` vs `idle` | 1,890,306 (91.2 %) | 69,202 (3.3 %) | **0** / 1,920 and **0** / 1,080 |
+
+That is the pattern this game wants: about 9 % of the pixels changed with **not one column or row
+of the coarse shape moved** is an animated light in a still view, and the sweep pairs above are what
+the camera looks like (1,242 of 1,920 columns). The same round's own `game.so` proof still holds here:
+the round reached `==== InitGame ====` and `41 entities inhibited`, lines only the Quake II gamecode
+can answer. The one red console line, `Unable to load players/male/w_blaster.md2`, is the full
+release's name and belongs to the earlier round's payload note beside it.
+
 ### QuakeWorld (`qw` tree: `qwprogs.dat` 197,684 B + `files.dat` 6,076 B + `id1` episode)
 
 Round of 2026-11-18, `/gamedata/installs/drawproof-qw.sh e1m1`, console
