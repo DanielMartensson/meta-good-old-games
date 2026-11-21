@@ -216,30 +216,168 @@ that binary - `descent.bat -lowmem` is the line in `d1fast.conf`.
 only: there is no `D2DEMO.EXE` in the official package until the bind above makes one, which
 is why the seat tree looks the way it does.
 
-## The gallery dump of the two Descents, and why it is a crop
+## The fill route, which is what the two Descent gallery pairs are taken at
 
-- the seat's gallery pairs live at `/gamedata/installs/shots/gallery/descent1` and
-  `descent2`, taken from the confs `/gamedata/run/d1w.conf` and `d2w.conf` with the
-  briefing films skipped by a walk of ten/twelve Enters plus one Escape - the Escape is what
-  jumps the flight-officer film into the mine cockpit the game opens play on
-- the engine cannot fill the seat's screen, so the layer's `shots/descent1-demo.png` and
-  `shots/descent2-demo.png` are those same captures cropped to the emulator's own picture
-  and stretched to 1920x1080: the window answers **640x417 whatever is asked of it**, since
-  `output = surface` is the only video system this build accepts (`output = openglnb` answers
-  `LOG: "openglnb" is not a valid value for variable: output.`), `windowresolution` needs an
-  output that does hardware scaling, `windowmaximize` is not a key of this build at all,
-  `normal2x = normal3x forced` and `normal2x = xbrz3 forced` with `autofit = true` still print
-  `surface consider=640x417 final=640x417`, and `videodriver = x11` has no X server on the seat
-  to use
-- `tools/doswindow.py` recovers the picture from the capture instead of asking the compositor
-  to change size: the window's left and right edges are the widest run of pixels that are
-  neither the wallpaper's navy `(3,35,75)` nor its gold `(255,210,0)`, its height is the
-  gap-tolerant run down both side columns, and the DOS picture starts 17 px below the window
-  top, at the first row that is not DOSBox-X's own menu-strip greys `(63,63,63)`, `(31,31,31)`
-  and `(191,191,191)` - both games bound the same 640x400, at `1142,295..1781,694` for Descent
-  1 and `969,439..1608,838` for Descent 2
-- the crop is stretched to fill 1920x1080, which is the emulator's own `[render] aspect = false`
-  at fullscreen: fill the frame, no black bars, and it is what those two confs set
+Two levers make the DOS picture the seat's whole panel, and both were measured rather than
+assumed:
+
+- `[sdl] maximize = true` makes the window the panel: the emulator reads that key at
+  `src/gui/sdlmain.cpp:3799` and hands it to SDL as `SDL_WINDOW_MAXIMIZED` at
+  `src/gui/sdlmain.cpp:1881`, so SDL2's wayland backend resizes the window to the desktop, and
+  the run logs `surface consider=1920x1048 final=1920x1048` (`src/output/output_surface.cpp:171`
+  and `:473`, the `LOG_MSG("surface consider=%ux%u final=%ux%u", ...)` pair). The seat's own
+  scene graph agrees - the same `weston-debug scene-graph 400ms` that reads the title readout
+  back gives the window's geometry as `(0, 0) -> (1920, 1048)` - because the panel is 1920x1080
+  and its bottom 32 rows, `1048..1079`, are the wallpaper's own gold `(255,210,0)` panel that
+  the compositor keeps outside the window
+- `[render] aspect = true` plus `scaler = xbrz_bilinear forced` with `xbrz fixed scale factor = 2`
+  paints into the 4:3 box `aspectCorrectFitClip` computes inside that window - `output_surface.cpp:147`,
+  `:366` and `:449` are the three calls, each of them guarded by `render.aspect` - which is 1397 px
+  of the 1920, since 1048 x 4/3 is 1397, and the measured captures agree exactly: both gallery
+  shots' non-black extent is columns `261..1657` and rows `0..1047`, and the other 523 columns
+  above the panel are pure black bars at the sides
+- the scaler is the part that fills, and the emulator's own source says why: the `scaler = none`
+  presentation is `SDL_BlitSurface(sdl.blit.surface, nullptr, sdl.surface, &sdl.clip)` at
+  `output_surface.cpp:727`, an unscaled blit, so the DOS raster keeps its own size inside the clip,
+  while the scaler's path scales first - `xBRZ_Render` at `:671`, then `xBRZ_PostScale` into the
+  clip at `:679` and the aspect path's at `:708`. The bake-off that measured it, three confs that
+  differ only in how `aspect` is spelled while all three carry `scaler = none`:
+
+  | conf | `[render] aspect` | what the DOS side was showing | full-window shot | non-black box |
+  | --- | --- | --- | --- | --- |
+  | `d2k` | `bilinear` | Descent 2's IPX card | 62,623 B md5 `cc47777d38d2b5d1bc5a18e43e266748` | 640x400 at columns `640..1279`, rows `324..723` |
+  | `d2l` | `nearest` | the same card | 62,682 B md5 `0be9d7104c5bfd528dff954b37352df2` | the same 640x400 box |
+  | `d2m` | `true` | the briefing blueprints | 36,283 B md5 `6454364be8dcec9375db0592d30105c0` | 618x434 at columns `656..1273`, rows `303..736` |
+
+  all three print the same `surface consider=1920x1048 final=1920x1048`, so the window was the panel
+  in all three runs, and all three still drew about 640 px of picture in the middle of 1920
+
+What is left once the window fills is what a presented frame costs, and that is the only lever
+the two games respond to:
+
+- `[cpu] cycles = max` asks the emulator to raise the count until a whole game loop fits inside
+  the frame, and at the fill route one never does, so `cycleup = 10` / `cycledown = 20` percent
+  walk it down to its 200/ms floor and both games stay inside their own boot films. The frameskip
+  ladder that measured it, same fill conf otherwise, three confs at `cycles = max`:
+
+  | conf | `[render] frameskip` | readout over the run |
+  | --- | --- | --- |
+  | `d2b` | 0 | `200 cycles/ms`, FPS 1-5, 14-20%/RT |
+  | `d2h` | 1 | `200 cycles/ms`, FPS 3-5, 21-49%/RT |
+  | `d2i` | 2 | `200 cycles/ms`, FPS 3-6, 24-58%/RT |
+
+  every shot of that round stayed on a boot card or a loading screen, and the confs that got past
+  them are the ones that stop self-tuning: the fill confs carry an explicit `cycles = 10000` /
+  `20000`, which reads `10000 cycles/ms` / `20000 cycles/ms` and puts the DOS side at 100%/RT
+- the gallery pair is then read off the emulator's own readout rather than off the picture:
+  `[sdl] showdetails = true` writes `cycles/ms`, FPS and %RT into the SDL window's title, which
+  the seat's scene graph carries, so a DOS side parked at a menu reads `FPS 0, 100%/RT` with
+  byte-identical shots - the emulator's `changedLines` early-out at `output_surface.cpp:733`
+  and `:750` returns before any `SDL_UpdateWindowSurface`, so the compositor is handed the same
+  bytes - while in-mine playback reads FPS > 0 and a different md5 per probe
+
+The pairs the fill route produced:
+
+- Descent 2's pair is at `/gamedata/installs/shots/gallery/descent2/{start,idle}.png`, taken at
+  `/gamedata/run/d2p.conf` (the fill conf above, at `cycles = 10000` and `frameskip = 0`). `start.png`
+  772,473 B md5 `d8ba8e2b57427bf8681fb69428910320` reads FPS 3 at 47%/RT and carries the Interactive
+  Demo's own overlay `DEMO PLAYBACK (2% DONE)`; `idle.png` 868,803 B md5 `7642f10482aa11f8bf0ffdfd01dae687`
+  reads FPS 4 at 39%/RT and carries `DEMO PLAYBACK (30% DONE)`. The percentage is the game's own
+  drawing, not something the round drew, so the two shots being 2% and 30% through is the proof
+  that they are different in-game frames, with nothing pressed between the two
+- a second Descent 2 pair at `frameskip = 1` and `cycles = 20000` (`/gamedata/run/d2r.conf`) reads
+  FPS 4/5 at 20-21%/RT at 830,117/827,567 B and sits in the mine the same way; it is kept under its
+  probe tag rather than in the gallery name
+- Descent 1's DOS side is told apart from the seat by its own screens, which each cost the
+  compositor a different number of bytes and only the animated ones read FPS > 0: the loading
+  screen's bar at FPS 1-2 and ~617 KB, the `SELECT PILOT / <CREATE NEW> PILOT` menu at FPS 0 and
+  ~558 KB, and the main menu (`DESCENT / NEW GAME / LOAD GAME... / ... / VIEW DEMO... / ... / QUIT`)
+  completely still at FPS 0, 100%/RT and ~903 KB. The walk that reaches the mine is one Enter per
+  state: Enter until the main menu, one Enter to `DIFFICULTY LEVEL / TRAININEE..INSANE` with ROOKIE
+  gold at ~831 KB and FPS 0, one Enter to the mission's briefing film - the space station with green
+  captions, ~660-700 KB and FPS 3-6 - and the Escape that jumps that film into the mine, since the
+  release's own `REFCARD.TXT` says ESCAPE is `Main menu/Abort game`. Descent 1's tree holds no demo
+  file at all (`DESCENT.HOG` 2,339,773 B and `DESCENT.PIG` 5,092,871 B are the maps and the graphics,
+  and the only `.DEM` on the seat is Descent 2's `D2DEMO.DEM` 355,173 B), so `VIEW DEMO` is not a
+  route here and `NEW GAME` is
+- inside the mine the ship is flown with held keys, which is what makes the DOS side animate at all:
+  ydotool's press/sleep/release is a held key, and the release's own `REFCARD.TXT` says ARROW KEYS
+  are the ship's rotations, A is forward, Z reverse, Q/E bank, CTRL fires primary and SPACEBAR
+  secondary, so the pair is taken around a held Right arrow
+
+### What makes a presented frame cost, measured against the window
+
+Four confs on one binary, all four driven to Descent 1's own mine and flown with the
+same held Right arrow, all four read off the emulator's own title and off the seat's
+own `/proc` record:
+
+| conf | the window weston's scene graph gives | `[render]` | FPS in the mine | %RT | the emulator's own CPU |
+| --- | --- | --- | --- | --- | --- |
+| `d1p.conf` | `(0, 0) -> (1920, 1048)` | `scaler = xbrz_bilinear forced` at `xbrz fixed scale factor = 2`, `frameskip = 0` | 3-5 | 21-55% | 90-103% of one core |
+| `d1f.conf` | the same `(0, 0) -> (1920, 1048)` | the same xbrz, `frameskip = 2` | 3-5 | 24-54% | - |
+| `d1win.conf` | `(586, 12) -> (906, 212)`, a 320x200 window | the same xbrz | 7-19 | 87-100% | 92-98% of one core |
+| `d1s.conf` | the same `(0, 0) -> (1920, 1048)` | `scaler = none` | 10-20 | 99-101% | 92-94% of one core |
+
+The maximised window is not slow because the panel is big. `d1s.conf` keeps the window
+the whole panel and takes the scaler out, and it runs 10-20 fps with the DOS side at
+99-101% of real time, so `SDL_UpdateWindowSurface` of a 1920x1048 window and weston's
+own repaint of it are not what limits this route. What limits it is the scaler's
+destination, and the tree says where that destination comes from: with `sdl_xbrz.enable`
+`OUTPUT_SURFACE_SetSize` sets `sdl.clip.w`/`sdl.clip.h` to the window itself at
+`output_surface.cpp:146-:149`, narrows it to the 4:3 box with `aspectCorrectFitClip` at
+`:147`, and `xBRZ_PostScale` at `:679` is handed exactly that `clipWidth, clipHeight` as
+its destination. The captures agree on both sides of the box: the maximised runs bound
+columns `261..1657` and rows `0..1047`, and inside the 320x200 window the picture bounds
+columns `27..292` and rows `0..199`, which is 266 px - 200 x 4/3 is 266.67 - so the
+scaler paints 1,464,056 px per presented frame at the panel against 53,200 px in the
+window, 27.5 times as many.
+
+The windowed conf's own log answers the window's size rather than an ask: piped through
+`tools/caplog.py`, `/gamedata/logs/surface-win.log` carries `LOG: surface consider=720x540
+final=720x540` for the DOS text mode and `LOG: surface consider=320x200 final=320x200`
+once Descent switches the DOS side to Mode 13, and it also carries the emulator's own
+complaint about that window's format, `LOG: SDL: Current window pixel format:
+SDL_PIXELFORMAT_RGB888` / `LOG: SDL: You are running in 24 bpp mode, this will slow down
+things!`. The same log prints the emulator's own hint at a lever that has not been
+measured here: `The 'scanline render on demand' option is available and may provide a
+modest boost in video render performance if set to true`.
+
+What the area ratio does not explain, the same table does: 27.5 times the pixels, 3-4
+times the frames. The rest is fixed cost that both routes pay, and it is paid in the same
+place - the xBRZ source is the DOS raster, `xBRZ_Render` at `:671` scales the 320x200
+Mode 13 canvas up to the 640x400 buffer at `scale_factor = 2` in both confs, and
+Descent's own world render happens inside the emulator at 320x200 before any of this.
+That fixed half is nearly the whole core on its own: with the scaler out, the DOS side
+keeps 99-101% of real time and still costs 92-94% of one core, so the 24 bpp window blit
+plus the 1.46M px `xBRZ_PostScale` have only the few percent left over to them, and that
+is what hands the DOS side 21-55% of real time rather than 100%.
+
+`[render] frameskip` is not a lever on this route: `sdlmain.cpp:1139` takes the key and
+answers `(void)frameskip;//UNUSED`, and the measured `frameskip = 2` conf reads 24-54% of
+real time against the 21-55% the same window reads at `frameskip = 0`. The one lever the
+fill route has is whether the scaler paints, and `scaler = none` is the only spelling of
+it that keeps the DOS side at real time while `maximize` still fills the panel - it leaves
+the DOS raster at its own size in the middle of the panel, which is why the gallery pairs
+above are taken with the scaler on.
+
+The pairs these routes left, all four shots in the mine with the emulator's title
+animating: `/gamedata/installs/shots/ab/full/{start,idle}.png` at 519,292/519,884 B md5
+`845a77a6c8e42541dd7ee2d9ece85bd0`/`0780203e3d5c6fcdc9f1a3243a723983` reading FPS 5 at 33%/RT
+and FPS 4 at 27%/RT, and `/gamedata/installs/shots/ab/win/{start,idle}.png` at 175,536/175,331 B
+md5 `3e02e9f718887fb1a5b446a0dbbdca7a`/`02ac55864581eea741545de47c442616` reading FPS 17 at 98%/RT
+and FPS 23 at 98%/RT. The emulator's own record reads rss 207,704/203,592 kB on the two xbrz
+confs and 137,900 kB on the `scaler = none` one, so the xbrz scaler's buffer set costs about 66 MB
+of the seat's resident pool, and the window's own size barely moves that figure: the buffer set is
+the scaler's source-side one, not a destination-sized one.
+
+The route that used to make these two dumps is superseded by the one above, and its measurement
+is kept here: a windowed capture (`/gamedata/run/d1w.conf`, `d2w.conf`, a 640x417 `surface` window)
+from which `tools/doswindow.py` cut the emulator's own window out of the desktop capture using the
+wallpaper's navy `(3,35,75)` and gold `(255,210,0)` fields and below DOSBox-X's own menu-strip greys
+`(63,63,63)`, `(31,31,31)` and `(191,191,191)` 17 px inside the window top - both games bounded the
+same 640x400 DOS picture, at `1142,295..1781,694` for Descent 1 and `969,439..1608,838` for Descent
+2 - and stretched that crop to 1920x1080, which is the emulator's own `aspect = false` look. What
+replaced it is the `maximize = true` measurement above, which needs no after-the-fact crop at all.
 
 ## Failure modes
 
@@ -248,11 +386,14 @@ is why the seat tree looks the way it does.
 | `E_Exit: Can't init SDL x11 not available`, and no window at all | `SDL_VIDEODRIVER=wayland` was left unset: this board carries no X server. The run that does start logs `LOG: SDL: version 2.30.1, Video wayland, Audio alsa` |
 | a log on `/gamedata` that grew to 5.5 GB | at the end of a non-interactive autoexec the emulator asks `You are currently running a program or game.` / `Are you sure to quit anyway now?` / `y/n:` and nothing answers, so it printed 4,500 pairs before the run was stopped - about 4.7 MB in the first 400 KB and 5.5 GB in the file that filled the whole mount while still open on fds 1 and 2. Use `>/dev/null 2>&1`, or `/gamedata/tools/caplog.py <cap>` |
 | `LOG: "openglnb" is not a valid value for variable: output.` | `output = surface` is the only video system this build accepts - `--disable-opengl` took the GL one out, and the seat has no desktop GL to answer it with anyway |
-| `windowresolution` / `windowmaximize` do nothing to the window size | they need an output that does hardware scaling; on a `surface` build the window answers 640x417 whatever is asked, and the scalers still print `surface consider=640x417 final=640x417`. `fullscreen = true` segfaults this weston - these confs ship `fullscreen = false` |
-| no in-game frames of either Descent, and no mouselook proof | needs a human at the seat's attached USB keyboard (`Dell USB Keyboard` = `/dev/input/event1`, major 13 minor 65; `USB Optical Mouse` = `/dev/input/event0`). No synthetic keystroke reaches this window at all: the `ydotool` OE package (cortexa35) lists `/usr/bin/ydtoold` in `dpkg -L` but the daemon is not on the filesystem, `/proc/kallsyms` (5,090,979 B) has 0 matches for `uinput` so the vendor kernel has nothing for a daemon to attach to, and the socket `/home/weston/.ydotool_socket` is there but `ydotool key 28:1 28:0` answers `failed to connect socket ... Connection refused` with rc=2. The 86 B real-mode `.COM` built for this round to poke the emulated BIOS key ring instead (md5 `ddbfea7dfe5d3ced5096f2d18920d6e0`, verified by `objdump -D -b binary -m i8086`, since deleted from the seat) reached nothing, because DOSBox-X's emulated DOS takes buffered input from its own queue rather than from the BIOS ring |
+| a window that answers the DOS raster's own size whatever `windowresolution` or `windowmaximize` is asked of it, and scalers that print `surface consider=` against that same size | those keys need an output that does hardware scaling, and `output = openglnb` is refused on this build (`--disable-opengl`), so a `maximize = false` + `windowresolution = 640x400` conf answers 320x200 in every run - the seat's scene graph gave `(586, 12) -> (906, 212)`, `(249, 417) -> (569, 617)` and `(362, 475) -> (682, 675)`, and the run's own log answers `LOG: surface consider=320x200 final=320x200` - which leaves only two presentation sizes on this route: the 320x200 window and the maximised 1920x1048 one. What does make the window the whole panel on a `surface` build is `[sdl] maximize = true`, and the runs that set it print `surface consider=1920x1048 final=1920x1048` instead - see the fill route above. `fullscreen = true` still segfaults this weston, so every conf here ships `fullscreen = false` |
+| a maximised window that runs 3-5 fps in the mine and reads 21-55%/RT, while the same maximised window at `scaler = none` runs 10-20 fps at 99-101%/RT | the fill is done by the xBRZ scaler, and its destination is the window's own 4:3 clip box - `xBRZ_PostScale` at `output_surface.cpp:679` is handed `sdl.clip.w`/`sdl.clip.h`, which `:146-:149` and `aspectCorrectFitClip` at `:147` set to 1,464,056 px at the panel against 53,200 px in the 320x200 window - so that software blit eats the little of one core the DOS side does not already cost, and the DOS side is handed 21-55% of real time. `[render] frameskip` is not the lever: `sdlmain.cpp:1139` answers `(void)frameskip;//UNUSED` and the measured `frameskip = 2` conf reads 24-54% against the 21-55% at `frameskip = 0`. The fill confs therefore carry the scaler and accept 3-5 fps, or take the scaler out and leave the DOS raster in the middle of the panel |
+| a Descent gallery pair that is byte-identical and reads `FPS 0, 100%/RT` | the DOS side is parked, not the window: both releases wait at their own `SELECT PILOT / <CTRL-D> DELETES / <CREATE NEW> MIKE` menu, and DOSBox-X's `changedLines` early-out in `EndUpdate` stops redrawing completely when the DOS screen has not changed, so the compositor keeps being handed the same bytes and the readout reads FPS 0 at full real time. The earlier version of this row - no synthetic keystroke reaching the window at all - is what a later round proved wrong: the seat runs `ydotoold --socket-path /tmp/.ydotool_socket --socket-ownership 0666` (pid 23672) next to `seatd` (pid 831), and `ydotool key 28:1 28:0` (Enter), `57:1 57:0` (Space), `1:1 1:0` (Escape) and `click 1` do reach the window - they are what cleared the IPX card, created the pilot and jumped the briefing film into the mine. What the readout is for is telling these two states apart, since a loading bar animates at FPS > 0 too and a mine animates at FPS > 0 too, and the only difference visible from the seat is the game's own overlay |
+| the window fills but the DOS side never leaves its own boot films, and the readout says `200 cycles/ms` | `[cpu] cycles = max` asks DOSBox-X to raise the count until a full game loop fits inside the frame, and at the fill route a loop never fits, so `cycleup = 10` / `cycledown = 20` percent walk it down to its 200/ms floor and the DOS side gets 14-58% of real time. The fill confs therefore set an explicit count (`cycles = 10000` / `20000`), which is what put the DOS side at 100%/RT and got both games to their mines |
 | `SETUP.EXE` will not draw on a `vgaonly` machine | the Epic-style setup wants a screen wider than 320x200 to draw its own; `d1setup.conf` is the one run that needs `svga_s3` |
 | `--enable-sdl2 was specified, but SDL2 was not found` | the `AM_PATH_SDL2` fallback wants `sdl2-config`, which libsdl2's main-package-only `BINCONFIG` leaves out of this sysroot; the pkg-config branch is the one that answers, and it needs the `pkgconfig` class's tool |
 | measuring says `ModuleNotFoundError: No module named 'PIL'` | the seat has no PIL; shot measurement runs on the build host with `tools/shotstat.py` |
+| `ydotool: Unknown command: mouseclick` and no key reaching the window at all | this seat's ydotool has no `mouseclick` subcommand - the one that lands is `ydotool click 1` - and a reboot wipes `/tmp`, which is where its daemon's socket lives, so `ydotoold --socket-path=/tmp/.ydotool_socket --socket-perm=0666` has to be restarted beside `seatd` and `YDOTOOL_SOCKET=/tmp/.ydotool_socket` exported by whoever drives the window |
 | `already-stripped`-style surprises in `do_install` | none here: this build is not pre-stripped, and `do_install` installs one binary and three data files |
 
 ## Files
@@ -265,19 +406,39 @@ all switches the tree's own `configure.ac` already has. `dosbox-x_git.bb` builds
 - [x] one engine for both games, one bind pair, both trees mounted from `/gamedata`
 - [x] the Wayland/GL-free pixel path: no GL context is opened by this emulator at all,
       `--disable-opengl` and the SDL window-surface blit are what the seat pays for
-- [x] the two Descent gallery dumps fill the seat's frame: `tools/doswindow.py` crops the
-      verified windowed captures to the emulator's 640x400 DOS picture and the crop is
-      stretched to 1920x1080, since every route that would have made the engine fill the
-      frame itself was measured dead here (`output = openglnb` refused, `windowresolution`
-      and `windowmaximize` inert on a `surface` build, scalers leaving the 640x417 surface,
-      no X server for `videodriver = x11`, `fullscreen` segfaulting weston)
-- [ ] mouselook proof for the two Descents, once a human is at the seat's keyboard: the
-      emulator's side is already in place (`SDL_SetRelativeMouseMode`), what is missing is a
-      keypress to start a level
-- [ ] a playback route to in-game frames with no keystroke injection at all: the release ships
-      its own recording, `D2DEMO.DEM` 355,173 B, and the game's section 6 `DEMOS &
-      SCREENSHOTS` says demo files play back and that the `PRINT SCREEN` key writes
-      `SCREENxx.PCX` into the DOS directory the game runs from
+- [x] the two Descent gallery dumps are taken at the seat's whole panel by the engine itself:
+      `[sdl] maximize = true` makes the window 1920x1048 and logs `surface consider=1920x1048
+      final=1920x1048`, `[render] aspect = true` plus `scaler = xbrz_bilinear forced` at
+      `xbrz fixed scale factor = 2` paints into the 1397x1048 box `aspectCorrectFitClip` computes
+      inside it, and `[cpu] cycles` is an explicit count so the DOS side keeps its 100%/RT; `aspect
+      = false`, `windowresolution`, `windowmaximize`, `output = openglnb`/`openglpp`, `videodriver
+      = x11` and `fullscreen = true` are still the dead routes measured here, and so is `[render]
+      frameskip`, which `sdlmain.cpp:1139` answers `(void)frameskip;//UNUSED` to - the 640x417 crop
+      route that used to make these dumps keeps its measurement above
+- [x] the keystroke route exists on the seat with nobody at a keyboard: `seatd` (pid 831) and
+      `ydotoold --socket-path /tmp/.ydotool_socket --socket-ownership 0666` (pid 23672) are both on
+      it, and `ydotool key 28:1 28:0` (Enter), `57:1 57:0` (Space), `1:1 1:0` (Escape) and `click
+      1` do reach the emulator's window - they are what cleared the IPX card, created the pilot and
+      jumped both briefing films into their mines
+- [ ] mouselook proof for the two Descents: the emulator's side is already in place (`SDL_SetRelativeMouseMode`
+      plus `[sdl] mouse_emulation = locked`), and what is measured so far is the ship being flown with
+      held arrow keys rather than with the mouse
+- [x] a playback route to in-game frames, for Descent 2: its Interactive Demo plays its own recording
+      and draws its own `DEMO PLAYBACK (n% DONE)` overlay, so the gallery pair above is a playback and
+      not a flight, and the release's own `D2DEMO.DEM` 355,173 B is that recording. The same route is
+      not available for Descent 1, whose tree holds no demo file at all, so its mine comes from `NEW GAME`
+- [ ] a `PRINT SCREEN` route, which would leave the proof inside the mounted DOS tree rather than in
+      a compositor capture: the release's section 6 `DEMOS & SCREENSHOTS` says demo files play back and
+      that the key writes `SCREENxx.PCX` into the DOS directory the game runs from, and Descent 1's own
+      `REFCARD.TXT` lists `print scrn` as `save screen shot` - unmeasured on the seat so far
+- [ ] a fill that plays at a usable rate: at the scaler the maximised window is 3-5 fps in the mine at
+      21-55% of real time, and this route answers only two sizes - the DOS raster's own 320x200 window
+      and the maximised 1920x1048 one, since the windowed run's own log says `consider=320x200` against
+      a `windowresolution = 640x400` ask - so a middle size needs an output that does hardware scaling,
+      and `--disable-opengl` took that output out of this build. Two levers the tree still offers have
+      not been measured on the seat: the emulator's own `scanline render on demand` hint and the window's
+      24 bpp `SDL_PIXELFORMAT_RGB888` surface, which the run itself calls out as
+      `You are running in 24 bpp mode, this will slow down things!`
 
 ## The debs this branch builds (built 2026-11-20 from this tree)
 

@@ -90,18 +90,37 @@ ioquake3 is how the payload is played, and that round also proved the FTEQW rout
 draws once a dedicated server owns the arena and the client connects to it, at
 the launcher's own defaults and with no map argument at all.
 
-The two Descent dumps are the DOS picture stretched to fill the seat's whole
-1920x1080, because DOSBox-X on this seat can only ever draw a 640x417 `surface`
-window: `fullscreen` segfaults weston twice over, `windowresolution` and
-`windowmaximize` are inert on a `surface` build, the `[render]` scalers leave the
-surface at 640x417, `output = openglnb`/`openglpp` answer `"openglnb" is not a
-valid value for variable: output`, there is no X server for `videodriver = x11`,
-so the fullscreen look is made after the capture rather than retried against the
-compositor: `tools/doswindow.py` cuts the emulator's own window out of the
-desktop capture from the wallpaper's navy and gold fields and cuts below the
-17 px menu strip DOSBox-X paints inside it, which bounds the real 640x400 DOS
-picture, and that crop is stretched to fill the frame, the same full-bleed scale
-the emulator's own `aspect = false` would have applied had it reached fullscreen.
+The two Descent pairs are DOSBox-X's own picture at the seat's whole panel, and the
+fill route that makes it so was measured rather than assumed: `[sdl] maximize = true`
+makes the window the panel - the run then logs `surface consider=1920x1048
+final=1920x1048` and weston's scene graph gives the window's geometry as `(0, 0) ->
+(1920, 1048)` - and `[render] aspect = true` plus `scaler = xbrz_bilinear forced` with
+`xbrz fixed scale factor = 2` is what paints into the 4:3 box that
+`aspectCorrectFitClip` computes inside it, 1397 px of the 1920, with black bars at the
+sides. Every `scaler = none` spelling of `aspect` prints the same `consider=1920x1048
+final=1920x1048` and still draws about 640-700 px in the middle, because that path's
+`SDL_BlitSurface` does not scale, so the scaler is what fills and the only levers left
+are how much a presented frame costs: `[cpu] cycles = max` self-tunes to the emulator's
+200/ms floor at this route and both games stay inside their own boot films, so the
+confs carry an explicit count, which reads `10000 cycles/ms` rather than that floor.
+What is still inert is what the old route relied on being inert: `windowresolution` and
+`windowmaximize` need an output that does hardware scaling - a windowed run's own log
+answers `consider=320x200` against a `windowresolution = 640x400` ask, which leaves this
+route exactly two sizes, the DOS raster's own window and the maximized panel - `output
+= openglnb`/`openglpp` are still refused, there is no X server for `videodriver = x11`,
+`fullscreen = true` still segfaults this weston, and `[render] frameskip` is taken and
+answered `(void)frameskip;//UNUSED`. The frame cost itself is now measured against the
+window rather than assumed: the maximized window at the scaler plays the mine at a few
+frames and hands the DOS side only 21-55% of real time, the same maximized window at
+`scaler = none` runs at 10-20 fps with the DOS side at 99-101% of real time, and the
+320x200 window at the scaler runs at 7-19 fps with it at 87-100%. The panel is not what
+costs - the scaler's destination is, since the emulator hands `xBRZ_PostScale` the window's
+own 4:3 box, 27 times as many pixels at the panel as in that window, on top of a DOS side
+that already costs nearly a whole core of this Cortex-A35. The superseded route - a 640x417
+window, with `tools/doswindow.py` cutting
+the emulator's own window out of the desktop capture from the wallpaper's navy and gold
+fields and cutting below the 17 px menu strip, then stretching that 640x400 crop to the
+frame - keeps its measurement in the engine's `PROOF.md`.
 
 The streaming pair's dumps are the seat's own `weston-screenshooter` captures
 while OpenNOWLite holds the window: Dark and Darker drew its menu and its 3-D
