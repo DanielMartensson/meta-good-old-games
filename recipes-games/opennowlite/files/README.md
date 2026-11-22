@@ -29,7 +29,7 @@ is the tree the seat's older package was built from.
 What the package is and what was proven
 --------------------------------------
 
-The recipe builds `1.0.5+release+git0+a9de957a59-r2.13`:
+The recipe builds `1.0.5+release+git0+a9de957a59-r2.14`:
 
 ```
 upstream   OpenCloudGaming/OpenNOW  tag v1.0.5  =  a9de957a5902c54186e9d4b44b1562f0b6beb951
@@ -124,11 +124,11 @@ it on the seat. There is no configure/make on the seat and no `apt`.
    ```console
    # dpkg -s opennowlite
    Package: opennowlite
-   Version: 1.0.5+release+git0+a9de957a59-r2.13
+   Version: 1.0.5+release+git0+a9de957a59-r2.14
    ```
 
-   Because `PKGR` moved, `dpkg -i` answers `over (...-r2.12)` and replaces the
-   client the seat carries today rather than refusing a same-version install.
+   Because `PKGR` moved, `dpkg -i` answers `over (...-r2.13)` and replaces the
+   client the seat carries rather than refusing a same-version install.
 
 No reboot. The seat's desktop is a plain Wayland compositor, so a new package
 needs nothing reloaded; if a client was running, stop it with the quit shortcut
@@ -166,7 +166,9 @@ you quit it. The client is detached with `setsid`, so the way to read it is the
 redirect the launch writes: its logging is its stdout and stderr, one line per
 event behind an `opennowlite:` or `opennowlite-input:` prefix, which is what the
 markers in the record are grepped from. The one line that says the round is alive
-is the queue clock: `opennowlite: queue wait=<n>s attempts=<n>`.
+is the queue clock: `opennowlite: queue wait=<n>s attempts=<n> queues left at the
+last poll=<n> lowest seen=<n>`, where the queues left is the place in the
+vendor's queue the same wait published.
 
 **One client at a time.** OpenNOW and OpenNOWLite cannot stream at the same
 moment: the core holds an exclusive lock over its data directory, and an
@@ -183,19 +185,34 @@ it spawned). Never kill the desktop's own processes.
 Picking a game by name
 ----------------------
 
-The client takes a CloudMatch **app id**, not a game name. `opennowlite-games`
-turns a name into that id:
+The client takes a CloudMatch **app id**, and it can be handed a game's **name**
+instead with `--search-game-id`, which asks the shipped core for the same
+library the OpenNOW window lists and takes the id off the title that carries
+the name:
 
 ```console
-$ ./opennowlite-games 'dark and darker'
-102303211   Dark and Darker
+$ opennowlite --search-game-id="dark and darker"
+opennowlite: library page 1 reply=<n> bytes items=100 more=1 matched=1
+opennowlite: library page 2 reply=<n> bytes items=71 more=0 matched=1
+opennowlite: library read pages=2 items=171 complete=1: the name "dark and darker" matched 1 title(s)
+opennowlite: the name "dark and darker" is the title "Dark and Darker" at launchAppId 102303211
 ```
 
-It spawns the core the OpenNOW package ships at the same pin and asks it for the
-live library (`catalog.library.list`), so the list is exactly what the core sees
-and nothing is cached here. It is standard library only, so it also runs on the
-seat; it is **not** installed by the deb, so run it by path inside this recipe.
-The lookup takes ~20 s - that is the one reply, not a stall.
+The name is matched case-insensitively against every item's title on every page,
+and the id is that item's own `launchAppId`, so nothing is cached and nothing is
+scraped: the list is the pages `catalog.library.list` answers, read one after
+another with the cursor, catalog context and revision the previous page carried.
+This account's library is 171 games in two pages (100 then 71), and a title two
+pages both carry is kept once. A catalog that moves mid-read answers
+`catalog_changed`, so a read that stops early is made once more from the first
+page, and a launch is only started after a complete read. **Exactly one** title
+carrying the name is what starts a launch, and the log names the title it landed
+on. No title carrying it is refused with the number of items the pages did
+answer; more than one is refused with every title and every id printed, so a
+launch is never started against a guess and a human picks one with
+`--launch-app-id=<id>` instead. Both spellings work, `--search-game-id=<name>`
+and `--search-game-id <name>`; giving a name and an id together is refused too,
+since that is one launch asked for two ways.
 
 
 Credentials
@@ -233,7 +250,8 @@ same list the client parses.
 
 | Switch | Meaning |
 | --- | --- |
-| `--launch-app-id=N` **(required)** | CloudMatch app id (a positive integer). Not a game name or slug. |
+| `--launch-app-id=N` **(one of the two)** | CloudMatch app id (a positive integer). Not a game name or slug — a name goes to `--search-game-id`. |
+| `--search-game-id=NAME` `--search-game-id NAME` | A title's name instead of an id: the shipped core's own `catalog.library.list` is asked and the item whose title contains NAME supplies its `launchAppId`. Case-insensitive, deduped by id. Refused when no title or more than one title carries the name, the second time with every title and id printed. |
 | `--fullscreen` | Make the window the whole screen instead of a windowed surface. |
 | `--width=N` `--height=N` | Window size, 1920x1080 by default. |
 | `--test-pattern` | Open the window and play a test pattern through the default GStreamer description, with no session at all. |
@@ -262,8 +280,10 @@ is the same scaling where it can.
 The client's logging is its stdout and stderr: one line per event, with a
 level-free `opennowlite:` / `opennowlite-input:` prefix, which is why a detached
 launch carries a `>log 2>&1` redirect at all. The marker that says the round is
-alive is the queue clock, `opennowlite: queue wait=<n>s attempts=<n>`, and the
-window shows the same clock as a banner. There is no config file: the switches
+alive is the queue clock, `opennowlite: queue wait=<n>s attempts=<n> queues left
+at the last poll=<n> lowest seen=<n>` — the wait's own length, its poll count and
+the place in the vendor's queue it published — and the window shows the same
+clock and the same place as a banner, the last one drawn as `<n> QUEUES LEFT`. There is no config file: the switches
 are the whole interface.
 
 
@@ -317,7 +337,6 @@ Layout
 | `README.md` | this document |
 | `opennow-lite.c` | the whole client: C, one translation unit, plus the generated `-protocol.c` files |
 | `opennowlite-launch.sh` | the launcher: keeps the desktop's Wayland session and execs the client |
-| `opennowlite-games` | the name -> CloudMatch app id helper. Standard library only, so it runs on the seat; it spawns the core and is not installed by the deb |
 | `0001-hand-encoded-media-to-the-host.patch` | the one patch the recipe applies on top of the fetched upstream tree, in the form the recipe's patch task consumes it |
 | `LICENSE` | what this project's own tree carries as documentation; the recipe's own license statement is in `../opennowlite_git.bb` |
 

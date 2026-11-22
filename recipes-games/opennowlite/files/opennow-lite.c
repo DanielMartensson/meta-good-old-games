@@ -58,12 +58,14 @@
  *   opennowlite: launch <method> <code>                    (core RPC refusal)
  *   opennowlite: launch inspect reply=<n> decision=<n> scope=<n> status=<s>
  *   opennowlite: session create reply=<n> named=<0/1> phase=<s>
+ *   opennowlite: library page <n> reply=<n> bytes items=<n> more=<0/1> matched=<n>   (one line per page of the shipped core's own library list: the first page is asked for with {} and every next page with the cursor, catalog context and revision that page carried; `more` is that page's own hasNextPage and `matched` is the running count of titles carrying the name over all the pages read so far)
+ *   opennowlite: library read pages=<n> items=<n> complete=<0/1>: the name "<name>" matched <n> title(s)   (--search-game-id: the summary of those pages, and a name that lands on more than one title is refused with every title and id printed)
+ *   opennowlite: library page <n> was refused: the catalog moved while it was read   (the vendor answers catalog_changed mid-read; the read is then made once more from the first page)
+ *   opennowlite: the name "<name>" is the title "<title>" at launchAppId <id>
  *   opennowlite: poll attempt=<n> reply=<n> session=<0/1> status=<n> phase=<s> rtsps=<n> waited=<n>s queue=<n> etaMs=<n>
+ *   opennowlite: <n> queues left in the vendor's queue, an eta of <n> ms, after <n>s of wait on attempt <n>   (one line only every time the position the vendor publishes changes; the window draws the same as <n> QUEUES LEFT)
  *   opennowlite: polling the allocation up to <n> times     (the wait budget)
- *   opennowlite: queue wait=<n>s attempts=<n>              (the account's turn,
- *                                                  counted from the accepted
- *                                                  allocation; the window shows
- *                                                  the same clock as a banner)
+ *   opennowlite: queue wait=<n>s attempts=<n> queues left at the last poll=<n> lowest seen=<n>   (the account's turn, counted from the accepted allocation; the window shows the same clock and the same position as a banner)
  *   opennowlite: session ready for <id>                    (launch)
  *   opennowlite: engine started for <id>                   (streamer up)
  *   opennowlite: encoded video unit 1 / encoded audio packet 1
@@ -1124,7 +1126,7 @@ static bool json_true(const char *doc, const char *key)
  * params objects they build by hand comes close to it, and the one params
  * object that does carry a reply-sized value (the session.create scope) is
  * sized from the reply it came out of, in that caller. */
-#define CORE_READ_MAX 262144
+#define CORE_READ_MAX 1048576
 #define CORE_LINE_MAX 8192
 
 typedef struct CoreRpc {
@@ -1695,6 +1697,167 @@ static int json_int_at(const char *doc, const char *key)
     return (int)strtol(at, NULL, 10);
 }
 
+/* ---- turning a title's name into the id the launch is keyed by ---- */
+
+/* --search-game-id takes the account's own words for a title, so the id has to
+ * be read rather than remembered: the shipped core answers the same library the
+ * OpenNOW window lists with catalog.library.list, whose items carry the title
+ * and the id under launchAppId. The list is the vendor's own pages, so an item
+ * is taken at whatever depth it sits and the pairs are deduped by id, so the
+ * list is read the way the OpenNOW window lists it. */
+#define LIBRARY_MAX_MATCHES 24
+#define LIBRARY_TITLE_MAX 96
+#define LIBRARY_ID_MAX 32
+#define LIBRARY_CURSOR_MAX 256
+#define LIBRARY_CONTEXT_MAX 1024
+#define LIBRARY_MAX_PAGES 16
+
+/* A name is matched the way a person says a title: case-insensitively and by
+ * what the title contains, so "dark" finds Dark and Darker. */
+static bool ci_contains(const char *haystack, const char *needle)
+{
+    size_t span = strlen(needle);
+    if (span == 0u)
+        return true;
+    for (const char *at = haystack; *at; ++at) {
+        size_t i = 0u;
+        while (i < span) {
+            char a = at[i];
+            char b = needle[i];
+            if (a >= 'a' && a <= 'z')
+                a = (char)(a - 'a' + 'A');
+            if (b >= 'a' && b <= 'z')
+                b = (char)(b - 'a' + 'A');
+            if (a != b)
+                break;
+            ++i;
+        }
+        if (i == span)
+            return true;
+    }
+    return false;
+}
+
+/* The id is quoted or bare depending on the vendor's own shape of the reply,
+ * so both are read: a quoted value is json_string's, a bare one is its digits. */
+static bool json_launch_id(const char *doc, char *out, size_t capacity)
+{
+    const char *at = json_value_at(doc, "\"launchAppId\"");
+    if (!at)
+        return false;
+    if (*at == '"')
+        return json_string(doc, "\"launchAppId\"", out, capacity);
+    size_t written = 0u;
+    while ((*at >= '0' && *at <= '9') || *at == '-') {
+        if (written + 1u >= capacity)
+            return false;
+        out[written++] = *at++;
+    }
+    if (written == 0u)
+        return false;
+    out[written] = '\0';
+    return true;
+}
+
+/* How many items the reply carries at all, which is what a name that matches
+ * none of them says: not "the account has no games", but the list it did get. */
+static int library_items(const char *doc)
+{
+    int items = 0;
+    const char *scan = doc;
+    while ((scan = strstr(scan, "\"launchAppId\"")) != NULL) {
+        ++items;
+        scan += 13u;
+    }
+    return items;
+}
+
+/* One forward pass over a page of the reply with a brace stack: every object
+ * that closes with both a title and a launchAppId is one library item. The
+ * innermost objects close first, which is why an item is read as its own pair
+ * rather than as one page's title against another page's id, and the copy is
+ * what bounds a key read to the object it came out of. Objects wider than one
+ * item's own are skipped rather than copied, since their items close inside
+ * them anyway. The count comes in from the pages already read, so the same
+ * title on two pages is kept once and the caller's arrays fill in order. */
+static int library_named(const char *doc, const char *needle,
+                         char (*titles)[LIBRARY_TITLE_MAX],
+                         char (*ids)[LIBRARY_ID_MAX], int matched,
+                         int max_matches)
+{
+    size_t stack[64];
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+
+    for (const char *at = doc; *at; ++at) {
+        if (in_string) {
+            if (escaped)
+                escaped = false;
+            else if (*at == '\\')
+                escaped = true;
+            else if (*at == '"')
+                in_string = false;
+            continue;
+        }
+        if (*at == '"') {
+            in_string = true;
+            continue;
+        }
+        if (*at == '{') {
+            if (depth < 64)
+                stack[depth++] = (size_t)(at - doc);
+            continue;
+        }
+        if (*at != '}' || depth == 0)
+            continue;
+        --depth;
+        size_t from = stack[depth];
+        size_t span = (size_t)(at - doc) - from + 1u;
+        if (span > 16384u)
+            continue;
+        const char *object = doc + from;
+        if (strstr(object, "\"title\"") == NULL ||
+            strstr(object, "\"launchAppId\"") == NULL)
+            continue;
+        char *own = malloc(span + 1u);
+        if (!own)
+            break;
+        memcpy(own, object, span);
+        own[span] = '\0';
+        char title[LIBRARY_TITLE_MAX];
+        char id[LIBRARY_ID_MAX];
+        bool named = json_string(own, "\"title\"", title, sizeof(title));
+        bool keyed = json_launch_id(own, id, sizeof(id));
+        free(own);
+        if (!named || !keyed || !ci_contains(title, needle))
+            continue;
+        bool known = false;
+        for (int i = 0; i < matched && i < max_matches; ++i) {
+            if (strcmp(ids[i], id) == 0) {
+                known = true;
+                break;
+            }
+        }
+        if (known)
+            continue;
+        ++matched;
+        if (matched <= max_matches) {
+            size_t keep = strlen(title) < (size_t)LIBRARY_TITLE_MAX - 1u
+                              ? strlen(title)
+                              : (size_t)LIBRARY_TITLE_MAX - 1u;
+            memcpy(titles[matched - 1], title, keep);
+            titles[matched - 1][keep] = '\0';
+            keep = strlen(id) < (size_t)LIBRARY_ID_MAX - 1u
+                      ? strlen(id)
+                      : (size_t)LIBRARY_ID_MAX - 1u;
+            memcpy(ids[matched - 1], id, keep);
+            ids[matched - 1][keep] = '\0';
+        }
+    }
+    return matched;
+}
+
 /* ---- what the window says while the account waits its turn ---- */
 
 /* A free-tier launch sits in the vendor's queue for minutes - measured at 181
@@ -1856,7 +2019,11 @@ static void window_banner(const char *headline, const char *clock_text,
  * (ten minutes) by default. */
 static int session_poll_attempts = 300;
 
-static bool session_open(const char *variant_id, const char *data_dir)
+/* The id this launch is keyed by comes out of here rather than out of the
+ * command line alone, because --search-game-id turns a name into that id by
+ * asking the core, and the copy of it is what the streamer is started with. */
+static bool session_open(const char *variant_id, const char *search_name,
+                         const char *data_dir, char *launch_id)
 {
     core_rpc = core_start(data_dir);
     if (!core_rpc) {
@@ -1867,6 +2034,7 @@ static bool session_open(const char *variant_id, const char *data_dir)
 
     char params[CORE_LINE_MAX];
     char *frame;
+    char named[256] = "";
 
     /* 1 · the core refuses every method until the shell's protocol version
      * matches its own; the shipped v1.0.4 speaks 6. */
@@ -1882,6 +2050,140 @@ static bool session_open(const char *variant_id, const char *data_dir)
         return false;
     }
     free(frame);
+
+    /* 1.5 · the name to id step, before any of the id-keyed steps run. The
+     * shipped core answers the account's own library one page at a time: the
+     * first page is the biggest reply this client reads on this seat (331,742
+     * bytes, 100 of the account's 171 games), and the next page is asked for
+     * with the cursor, catalog context and revision that page carried. A
+     * catalog that moves under the read answers catalog_changed, so a read
+     * that stops early is made once more from the first page before the name
+     * is given up on. An id is never guessed at: a name that lands on more
+     * than one title is refused with every title printed, so a human picks one
+     * and relaunches with that --launch-app-id. */
+    if (search_name && *search_name) {
+        char titles[LIBRARY_MAX_MATCHES][LIBRARY_TITLE_MAX];
+        char ids[LIBRARY_MAX_MATCHES][LIBRARY_ID_MAX];
+        int matched = 0;
+        int items = 0;
+        int pages = 0;
+        bool complete = false;
+
+        for (int attempt = 1; attempt <= 2 && !complete; ++attempt) {
+            char cursor[LIBRARY_CURSOR_MAX] = "";
+            char context[LIBRARY_CONTEXT_MAX] = "";
+            int revision = -1;
+            bool more = true;
+            matched = 0;
+            items = 0;
+            pages = 0;
+
+            for (int page = 1; more && page <= LIBRARY_MAX_PAGES; ++page) {
+                char params[CORE_LINE_MAX];
+                if (page == 1)
+                    snprintf(params, sizeof(params), "{}");
+                else
+                    snprintf(params, sizeof(params),
+                             "{\"cursor\":\"%s\",\"catalogRevision\":%d,"
+                             "\"catalogContext\":\"%s\"}",
+                             cursor, revision, context);
+                if (!core_request(core_rpc, "lite-library",
+                                  "catalog.library.list", params))
+                    return false;
+                frame = core_reply(core_rpc, "lite-library",
+                                   OPENNOWLITE_RPC_TIMEOUT);
+                if (!frame) {
+                    fprintf(stderr,
+                            "opennowlite: launch catalog.library.list no-reply\n");
+                    return false;
+                }
+                if (core_refused(core_rpc, frame, "catalog.library.list")) {
+                    free(frame);
+                    if (page == 1)
+                        return false;
+                    fprintf(stderr,
+                            "opennowlite: library page %d was refused: the "
+                            "catalog moved while it was read\n", page);
+                    break;
+                }
+                more = json_true(frame, "\"hasNextPage\"");
+                json_string(frame, "\"nextCursor\"", cursor, sizeof(cursor));
+                json_string(frame, "\"catalogContext\"", context,
+                            sizeof(context));
+                int seen = json_int_at(frame, "\"catalogRevision\"");
+                if (seen >= 0)
+                    revision = seen;
+                int page_items = library_items(frame);
+                items += page_items;
+                ++pages;
+                matched = library_named(frame, search_name, titles, ids,
+                                        matched, LIBRARY_MAX_MATCHES);
+                fprintf(stderr,
+                        "opennowlite: library page %d reply=%zu bytes items=%d "
+                        "more=%d matched=%d\n",
+                        page, strlen(frame), page_items, more ? 1 : 0, matched);
+                free(frame);
+            }
+            complete = !more;
+            if (!complete && attempt == 1)
+                fprintf(stderr,
+                        "opennowlite: the library read stopped early; reading "
+                        "it again from the first page\n");
+        }
+
+        fprintf(stderr,
+                "opennowlite: library read pages=%d items=%d complete=%d: the "
+                "name \"%s\" matched %d title(s)\n",
+                pages, items, complete ? 1 : 0, search_name, matched);
+
+        if (!complete) {
+            for (int i = 0; i < matched && i < LIBRARY_MAX_MATCHES; ++i)
+                fprintf(stderr,
+                        "opennowlite: the name is carried by \"%s\" at "
+                        "launchAppId %s\n",
+                        titles[i], ids[i]);
+            fprintf(stderr,
+                    "opennowlite: refusing a launch from a library that was "
+                    "read twice and changed twice: name a title above with "
+                    "--launch-app-id=<id>, or ask for the name again\n");
+            return false;
+        }
+        if (matched == 0) {
+            fprintf(stderr,
+                    "opennowlite: no title in the account's library contains "
+                    "\"%s\": the list it answered carries %d items\n",
+                    search_name, items);
+            return false;
+        }
+        if (matched > 1) {
+            int shown = matched < LIBRARY_MAX_MATCHES ? matched
+                                                     : LIBRARY_MAX_MATCHES;
+            for (int i = 0; i < shown; ++i)
+                fprintf(stderr,
+                        "opennowlite: the name \"%s\" is ambiguous: \"%s\" is "
+                        "launchAppId %s\n",
+                        search_name, titles[i], ids[i]);
+            if (matched > shown)
+                fprintf(stderr,
+                        "opennowlite: the name is ambiguous and only the first "
+                        "%d titles of %d are printed\n",
+                        shown, matched);
+            fprintf(stderr,
+                    "opennowlite: refusing a launch against a guessed title: "
+                    "name one of the titles above with --launch-app-id=<id>\n");
+            return false;
+        }
+        snprintf(named, sizeof(named), "%s", ids[0]);
+        fprintf(stderr,
+                "opennowlite: the name \"%s\" is the title \"%s\" at launchAppId "
+                "%s\n",
+                search_name, titles[0], ids[0]);
+        if (!variant_id)
+            variant_id = named;
+        snprintf(launch_id, 256, "%s", variant_id);
+    } else if (variant_id) {
+        snprintf(launch_id, 256, "%s", variant_id);
+    }
 
     /* 2 · the catalog entry for the launch id. The id the vendor keys the
      * launch decision by is the parent game's, so the variant is looked up
@@ -2041,6 +2343,13 @@ static bool session_open(const char *variant_id, const char *data_dir)
     char queue_text[48] = "";
     char footer[48];
     int poll_used = 0;
+    /* The position the vendor publishes is the wait's own measure: it says how
+     * many turns of the queue are ahead of this seat rather than only how long
+     * the seat has been waiting, which is what the bare clock left the window
+     * showing. It is drawn on the window and it is logged once every time it
+     * changes, so the log says the wait's shape rather than one line per poll. */
+    int queues_left_last = -1;
+    int queues_left_low = -1;
     snprintf(clock_text, sizeof(clock_text), "00:00");
     snprintf(footer, sizeof(footer), "ATTEMPT 1 OF %d", poll_limit);
     window_banner("IN QUEUE", clock_text, queue_text, footer);
@@ -2089,14 +2398,29 @@ static bool session_open(const char *variant_id, const char *data_dir)
                     phase[0] ? phase : "-", rtsps[0] ? strlen(rtsps) : 0,
                     waited, queue_position, queue_eta_ms);
             if (queue_position >= 0) {
+                if (queue_position != queues_left_last) {
+                    queues_left_last = queue_position;
+                    if (queues_left_low < 0 || queue_position < queues_left_low)
+                        queues_left_low = queue_position;
+                    if (queue_eta_ms > 0)
+                        fprintf(stderr,
+                                "opennowlite: %d queues left in the vendor's queue, "
+                                "an eta of %d ms, after %lds of wait on attempt %d\n",
+                                queue_position, queue_eta_ms, waited, attempt + 1);
+                    else
+                        fprintf(stderr,
+                                "opennowlite: %d queues left in the vendor's queue, "
+                                "no eta given, after %lds of wait on attempt %d\n",
+                                queue_position, waited, attempt + 1);
+                }
                 if (queue_eta_ms > 0)
                     snprintf(queue_text, sizeof(queue_text),
-                             "QUEUE %d  ETA %02d:%02d", queue_position,
+                             "%d QUEUES LEFT  ETA %02d:%02d", queue_position,
                              (queue_eta_ms / 60000) % 100,
                              (queue_eta_ms / 1000) % 60);
                 else
-                    snprintf(queue_text, sizeof(queue_text), "QUEUE %d",
-                             queue_position);
+                    snprintf(queue_text, sizeof(queue_text),
+                             "%d QUEUES LEFT", queue_position);
                 window_banner("IN QUEUE", clock_text, queue_text, footer);
             }
             free(rtsps);
@@ -2146,8 +2470,17 @@ static bool session_open(const char *variant_id, const char *data_dir)
                  waited / 60L, waited % 60L);
         window_banner("STARTING", clock_text, "", "PREPARING THE STREAM");
     }
-    fprintf(stderr, "opennowlite: queue wait=%lds attempts=%d\n",
-            ms_since(&queue_at) / 1000L, poll_used);
+    if (queues_left_last >= 0)
+        fprintf(stderr,
+                "opennowlite: queue wait=%lds attempts=%d queues left at the "
+                "last poll=%d lowest seen=%d\n",
+                ms_since(&queue_at) / 1000L, poll_used, queues_left_last,
+                queues_left_low);
+    else
+        fprintf(stderr,
+                "opennowlite: queue wait=%lds attempts=%d the vendor gave no "
+                "queue position at all this wait\n",
+                ms_since(&queue_at) / 1000L, poll_used);
     fprintf(stderr, "opennowlite: session ready for %s\n", variant_id);
     return true;
 }
@@ -3712,13 +4045,28 @@ static unsigned long pilot_list_parse(const char *list)
 static void usage(const char *argv0)
 {
     fprintf(stderr,
-            "usage: %s [--launch-app-id=ID] [--data-dir DIR] [--fullscreen]\n"
+            "usage: %s [--launch-app-id=ID | --search-game-id=NAME] [--data-dir DIR] [--fullscreen]\n"
             "       [--show-cursor] [--mouse-absolute] [--mouse-look=P] [--no-pointer-lock] [--width N] [--height N] [--pipeline DESC] [--test-pattern]\n"
             "       [--auto-pilot] [--pilot-at=S] [--pilot-times=N] [--pilot-gap=S]\n"
             "       [--pilot-click] [--pilot-point=WxH]\n"
             "       [--record=FILE] [--record-seconds=S] [--record-from=S] [--poll-attempts=N]\n"
+            "       [--search-game-id=NAME | --search-game-id NAME]\n"
             "       [--debug-input] [--debug-audio=FILE] [--debug-audio-seconds=S]\n"
             "       [--media-dead=S]\n"
+            "  --search-game-id takes a title's name in place of an id and asks\n"
+            "  the shipped core for the same library the OpenNOW window lists,\n"
+            "  so an id never has to be remembered or looked up by hand. The\n"
+            "  name is matched case-insensitively against every item's title\n"
+            "  and the id comes from that item's own launchAppId; the attached\n"
+            "  --search-game-id=<name> and the separate --search-game-id <name>\n"
+            "  spellings are the same switch. Exactly one title carrying the\n"
+            "  name is what starts a launch, and the log names the title it\n"
+            "  landed on. No title carrying it is refused with the number of\n"
+            "  items the list did answer, and more than one is refused with\n"
+            "  every title and every id printed, so that a human picks one and\n"
+            "  relaunches with that --launch-app-id: a launch is never started\n"
+            "  against a guessed title. Giving a name and an id together is\n"
+            "  refused too, since that is one launch asked for two ways.\n"
             "  the default launch opens the seat's signed-in session and streams\n"
             "  the game into the app's own Wayland window; --test-pattern, or\n"
             "  --pipeline, plays a test pattern in that same window with no\n"
@@ -3767,6 +4115,15 @@ static void usage(const char *argv0)
             "  300 (ten minutes) by default, since a free-tier queue wait was\n"
             "  measured past the 120 s r1.4 spent before it gave up on a launch\n"
             "  whose last poll had already started carrying rtsp endpoints.\n"
+            "  The same wait is read rather than only timed: while the vendor is\n"
+            "  still holding the launch, its session.poll answers the seat's own\n"
+            "  place in the queue, and that number is drawn on the window as\n"
+            "  <n> QUEUES LEFT with the vendor's eta beside it, and put on the log\n"
+            "  once every time it changes rather than once per poll, so a wait of\n"
+            "  many minutes reads as the turns ahead of this seat rather than as\n"
+            "  a clock over a dark slate. The wait's summary line carries the\n"
+            "  position the last poll answered and the lowest one seen, and a\n"
+            "  wait the vendor never gave a position for says that instead.\n"
             "  --debug-input stamps every input submit with its offset inside\n"
             "  the session and the time the streamer's own call took, which is\n"
             "  how the complaint that a press of a pop-up's OK closed seconds\n"
@@ -3835,6 +4192,8 @@ int main(int argc, char **argv)
     int height = 1080;
     const char *variant_id = NULL;
     const char *data_dir = NULL;
+    const char *search_name = NULL;
+    char launch_id[256] = "";
     bool auto_pilot = false;
     bool pilot_at_given = false;
     int pilot_times = 64;
@@ -3854,6 +4213,36 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--launch-app-id=", 16) == 0) {
             variant_id = argv[i] + 16;
+        } else if (strncmp(argv[i], "--search-game-id=", 17) == 0) {
+            /* a name rather than an id: the id is read off the shipped core's
+             * own library list, so nothing about the account is scraped */
+            if (search_name) {
+                fprintf(stderr, "opennowlite: --search-game-id given twice: \"%s\" and \"%s\"\n",
+                        search_name, argv[i] + 17);
+                usage(argv[0]);
+                return 2;
+            }
+            search_name = argv[i] + 17;
+            if (!search_name[0]) {
+                fprintf(stderr, "opennowlite: --search-game-id= wants a name\n");
+                usage(argv[0]);
+                return 2;
+            }
+        } else if (strcmp(argv[i], "--search-game-id") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr,
+                        "opennowlite: --search-game-id wants the name as its "
+                        "next word or attached as --search-game-id=<name>\n");
+                usage(argv[0]);
+                return 2;
+            }
+            if (search_name) {
+                fprintf(stderr, "opennowlite: --search-game-id given twice: \"%s\" and \"%s\"\n",
+                        search_name, argv[i + 1]);
+                usage(argv[0]);
+                return 2;
+            }
+            search_name = argv[++i];
         } else if (strcmp(argv[i], "--data-dir") == 0 && i + 1 < argc) {
             data_dir = argv[++i];
         } else if (strcmp(argv[i], "--test-pattern") == 0) {
@@ -3964,8 +4353,25 @@ int main(int argc, char **argv)
             return 2;
         }
     }
-    if (!test_pattern && !variant_id) {
-        fprintf(stderr, "opennowlite: --launch-app-id is required\n");
+    if (!test_pattern && !variant_id && !search_name) {
+        fprintf(stderr, "opennowlite: --launch-app-id or --search-game-id is required\n");
+        usage(argv[0]);
+        return 2;
+    }
+    if (search_name && !search_name[0]) {
+        fprintf(stderr,
+                "opennowlite: --search-game-id was given an empty name: a "
+                "name that matches nothing is refused once the list is read, "
+                "an empty one matches every title\n");
+        usage(argv[0]);
+        return 2;
+    }
+    if (variant_id && search_name) {
+        fprintf(stderr,
+                "opennowlite: --launch-app-id=%s and the name \"%s\" ask for "
+                "one launch two ways: a name is resolved against the library, "
+                "an id is used as it is\n",
+                variant_id, search_name);
         usage(argv[0]);
         return 2;
     }
@@ -4069,12 +4475,12 @@ int main(int argc, char **argv)
         if (!start_pipeline(&app, pipeline))
             return 1;
     } else {
-        if (!session_open(variant_id, data_dir)) {
+        if (!session_open(variant_id, search_name, data_dir, launch_id)) {
             fprintf(stderr, "opennowlite: session failed\n");
             core_shutdown(core_rpc);
             return 1;
         }
-        if (!stream_new(&app) || !engine_start(variant_id)) {
+        if (!stream_new(&app) || !engine_start(launch_id)) {
             fprintf(stderr, "opennowlite: media path failed\n");
             core_shutdown(core_rpc);
             return 1;

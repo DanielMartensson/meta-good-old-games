@@ -93,8 +93,15 @@ S = "${WORKDIR}/git"
 # the same-version refusal. What does NOT move the counter is the v1.0.4 to v1.0.5
 # pin bump on its own: nothing in the opennow-streamer tree differs between those
 # two release tags, measured by diffing the subtree on the build host, and that is
-# also what the fetch keeps honest.
-PKGR = "r2.13"
+# also what the fetch keeps honest. The counter moves one more time to r2.14 on
+# Nov 22 2026 because the source moved a second time rather than because anything
+# else did: rev 3 at 206974 B (md5 d9dea2442e6817a7527823bd679ad244) adds the
+# --search-game-id name->id read and raises the core reply bound CORE_READ_MAX
+# from 262144 to 1048576 bytes, which is what one page of this account's own
+# library list needs (331752 B measured on the seat), so the client that refuses
+# to launch a name and the client that launches one are different clients and the
+# version has to say so.
+PKGR = "r2.14"
 
 DEPENDS = " \
     gstreamer1.0 \

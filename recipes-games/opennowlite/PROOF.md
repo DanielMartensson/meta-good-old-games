@@ -5,7 +5,7 @@ Detail file for `recipes-games/opennowlite/opennowlite_git.bb`, beside its
 rebuilt or re-measured this client, the design notes that name why each switch
 looks the way it does, and the failure modes that were measured on the seat.
 
-This branch builds `opennowlite 1.0.5+release+git${SRCPV}` with `PKGR = "r2.13"`
+This branch builds `opennowlite 1.0.5+release+git${SRCPV}` with `PKGR = "r2.14"`
 from the same upstream pin as the `opennow` recipe - the release tag `v1.0.5` =
 `a9de957a5902c54186e9d4b44b1562f0b6beb951`, the tip of `refs/heads/main` - with
 this recipe's own one-patch delta applied on top of the fetched tree. It
@@ -26,10 +26,14 @@ git://github.com/OpenCloudGaming/OpenNOW.git;protocol=https;branch=main
 SRCREV  a9de957a5902c54186e9d4b44b1562f0b6beb951   (refs/tags/v1.0.5 == refs/heads/main)
 patch   0001-hand-encoded-media-to-the-host.patch   applied at do_patch over the fetched tree
         md5 238072746d0d556bf792d61868b00b31, 21079 B
-file    opennow-lite.c  187717 B  md5 36a9f99a029affa9c1117dabfa0a1528   (the banner's rev 2)
+file    opennow-lite.c  206974 B  md5 d9dea2442e6817a7527823bd679ad244   (rev 3:
+        --search-game-id's name->id read plus CORE_READ_MAX raised, and the two
+        usage/log-line edits that came with it; rev 2 was 187717 B md5
+        36a9f99a029affa9c1117dabfa0a1528 and rev 1 187175 B md5
+        e5bc80c820f84f245a0ebd109753a0c7, both quoted below)
 file    opennowlite-launch.sh  829 B  md5 d0102c5535a4eb16dd28e2402796007a
 LICENSE MIT, LIC_FILES_CHKSUM file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302
-PV 1.0.5+release+git${SRCPV}    PKGR r2.13    S ${WORKDIR}/git
+PV 1.0.5+release+git${SRCPV}    PKGR r2.14    S ${WORKDIR}/git
 ```
 
 The tree this recipe builds is the fetched upstream one with one patch: the
@@ -279,10 +283,31 @@ cross-builds vendored SDL2 with cmake; `rust-1.89.0-host` because this workspace
 ## The PKGR ladder and the deb md5s
 
 ```
-r2.13 (this tree)     the client source opennow-lite.c 187717 B md5 36a9f99a029affa9c1117dabfa0a1528
-                      (the banner's rev 2: the queue line is kept apart from the footer), launcher
+r2.14 (this tree)     the client source opennow-lite.c 206974 B md5 d9dea2442e6817a7527823bd679ad244
+                      (rev 3: --search-game-id's name->id read and CORE_READ_MAX
+                      262144 -> 1048576, so one page of the account's own library
+                      fits a reply at all), launcher
                       opennowlite-launch.sh 829 B md5 d0102c5535a4eb16dd28e2402796007a
-                      the deb's own md5 is the build's, recorded once the build has run
+                      (unchanged since r2.12: the launcher keeps the seat's Wayland
+                      session and execs the client with "$@", so a name handed to
+                      opennowlite is the same name the client reads)
+r2.13                 the client source opennow-lite.c 187717 B md5 36a9f99a029affa9c1117dabfa0a1528
+                      (the banner's rev 2: the queue line is kept apart from the footer), launcher
+                      as above; four deb builds stood at this counter, and all
+                      four are quoted rather than installed: 3607020 B md5
+                      0efdc80390e6fed2014485aaad9585c1 (the re-homed tree of Nov
+                      20, whose client fe36278b43be95c319910d912e573070 has no
+                      name read at all), 3608268 B md5 d0e1925a4f306e0c52b21e15185e5125
+                      (whose client 84ad2cc51ee2e526e48d40cf629a384d reads a name
+                      but asks the library in one request and cannot hold one
+                      page of this account's library), 3605744 B md5
+                      589ae2eca1de390ce6a1913f718575e0 (whose client 8213f493add9b52df836d7845955f70f
+                      pages the library at the raised bound and was the client
+                      the seat ran until the last build replaced it) and 3605708 B
+                      md5 0f14ff12f8fae33e1700145dfbc405af (whose client
+                      cb0389711614620199b3726e174e4a6c is the same read with its
+                      own `usage()` de-duplicated and the new log lines written
+                      into the source's header, and is the one installed)
 r2.12 on the seat     version 1.0.5+release+git0+a9de957a59-r2.12, from the vendored tree
                       /usr/bin/opennow-lite              269efbcf33017cb1a2aad68a3943b169
                       /usr/bin/opennowlite               d0102c5535a4eb16dd28e2402796007a
@@ -395,6 +420,107 @@ about 480 MB of its 1.7 GB pool and roughly 70 % CPU during that round, which is
 mostly the shipped `opennow-core` doing catalog, auth and signalling work rather
 than the client.
 
+## The name→id read (rev 3), and the rounds that read a name
+
+`--search-game-id` is rev 3's addition, and the read is the vendor's own list
+rather than a table this layer keeps: `catalog.library.list` is the request the
+OpenNOW window's own list rides on, and its items carry the title and the id as
+`launchAppId`. No name→id pair is cached anywhere in this tree, so an account
+that gains a title gains it in the client's next read.
+
+What the paging costs on this account, measured 2026-11-22 on the seat: page 1 is
+331,752 bytes / 100 items in 16.9 s (the vendor's own first fetch), page 2 is
+233,131 bytes / 71 items in 0.7 s (page 1 is cached at the core), and the read
+logs one line per page and one summary line, so the log says which page answered
+which size and which of them carried the name:
+
+```
+opennowlite: library page 1 reply=331752 bytes items=100 more=1 matched=1
+opennowlite: library page 2 reply=233131 bytes items=71 more=0 matched=1
+opennowlite: library read pages=2 items=171 complete=1: the name "dark and darker" matched 1 title(s)
+opennowlite: the name "dark and darker" is the title "Dark and Darker" at launchAppId 102303211
+```
+
+The same read refuses both ways it can, on this account's own library:
+
+- a name nothing carries (`zzz no such title zzz`) answers `no title in the
+  account's library contains "zzz no such title zzz": the list it answered
+  carries 171 items` at rc 1, and no session is asked for;
+- a name four titles carry (`dark`) prints all four - `Dark and Darker 102303211`,
+  `Aliens: Dark Descent 103672247`, `DOOM: The Dark Ages 103137386` and
+  `Warhammer 40,000: Darktide 102404911` - and answers `refusing a launch
+  against a guessed title: name one of the titles above with --launch-app-id=<id>`
+  at rc 1 with no session asked for, so the ambiguity is a real one on the seat
+  rather than a hypothetical, and the id is never guessed at;
+- a name and an id together answer `... ask for one launch two ways: a name is
+  resolved against the library, an id is used as it is`, and a bare
+  `--search-game-id` with no word after it answers `wants the name as its next
+  word or attached as --search-game-id=<name>`, both at rc 1 with no window drawn.
+
+The first rounds that read a name on the seat, 2026-11-22, ran the launcher rather
+than the client's own path, so the words a person types are the package's entry
+point: `opennowlite --search-game-id="dark and darker"` at 13:41:32 seat time,
+log `/gamedata/logs/onl59-dnd2.log` 506 lines, client pid 272424 and core pid
+272425. The queue was visible in the window's banner for the first time in this
+client's history, and the same numbers came out of the log's own lines:
+
+```
+opennowlite: 46 queues left in the vendor's queue, no eta given, after 0s of wait on attempt 1
+opennowlite: 7 queues left in the vendor's queue, no eta given, after 118s of wait on attempt 50
+opennowlite: queue wait=184s attempts=80 queues left at the last poll=7 lowest seen=7
+opennowlite: session ready for 102303211
+```
+
+- the name's own cost was 17.6 s of the round's wall, and the wait's own 184 s
+  over 80 polls sits against the 179/181/183 s the id-keyed rounds measured, so
+  reading a name costs the pages and none of the vendor's turn;
+- the queue went 46 → 7 over 16 logged changes, and the window drew
+  `<n> QUEUES LEFT` beside the wait clock the same times the log wrote them,
+  which is what a person at the seat confirmed;
+- media reached the client at 03:27 of the round (`engine started for 102303211`
+  then `NVST first H264 access unit: frame=1 bytes=20201 frameType=Some(I)`), and
+  the tallies walked to `video units=12000 queued=461` with `NVST rx-stats
+  elapsed=210.1s auth=40221 fec=24875 frames=12439` about 200 s of picture in, so
+  the round held 200 s of picture against the queue's 184 s;
+- what the round costs, read from `ps` over it rather than guessed: 0.5-0.9 % cpu
+  at 16,028 kB rss through the whole queue wait - the client is waiting, not
+  working, and the window is already drawn - against 2.6-9.4 % cpu at
+  30,804-34,672 kB rss once the picture was moving;
+- the round was closed with `pkill -TERM -x opennow-lite` at 13:51:52 and answered
+  `stopping keys=0 motions=94 submits=102 refused=0 skipped=0 pilot=0 jiggle=0
+  move=0` behind `opennowlite: stream reply lite-stop ok` and
+  `opennowlite: engine stopped`, with the client and the core both gone after it.
+
+The round before it, at 13:29:04 (log `/gamedata/logs/onl59-dnd.log` 687 lines,
+client pid 270562), is the allocation record's refusal measured against the new
+read rather than against an id, and it reached the queue: the account, the catalog
+and the paging all answered (`library read pages=2 items=171 complete=1`, `the
+name "dark and darker" is the title ... at launchAppId 102303211`) and the queue
+then went 50 → 9 over 17 changes to `queue wait=183s attempts=80 queues left at
+the last poll=9 lowest seen=9` before `session ready for 102303211`. The attempt
+before that one, at 13:25:3x - the same log path, truncated by this relaunch, so
+its lines are only in this round's own reading - answered
+`launch session.create session_allocation_recovery_required` and `session failed`
+after the window had already been drawn, because a `unresolved-allocation.json`
+of Nov 19 18:22 sat in the core's way; moving it to
+`backup/1795354144-unresolved-allocation.json` is what made the next round run,
+which is the same hand-move the pilot script does and nothing new about this
+client.
+
+What a person at the seat saw after the picture stopped being interesting, and
+what the logs prove about it: closing Dark and Darker inside its own menus does
+not end the session and does not stop the picture. After the title had closed,
+the stream kept advancing at `video units=11400` → `12000` and `frames=11843` →
+`12439` over 10 s at 6.3 % cpu, so the vendor was still handing over about 59
+frames a second of whatever the title left on the panel, and `session.poll` had
+already answered its last poll at `poll attempt=80 ... status=2 phase=ready`,
+which is the last poll the client makes. There is therefore no "the game ended"
+fact for the client to close on, and `--media-dead=S`, which ends a session whose
+picture stopped advancing, is not what this case is: the tally advances. The exit
+stays the window's own Ctrl+Alt+Shift+O or `kill -TERM` on the recorded pair,
+which is what this round did, and a client that is still alive after its title
+closed is a session that is still running rather than a client that hung.
+
 ## Failure modes, measured on the seat
 
 | Symptom | Cause |
@@ -402,8 +528,13 @@ than the client.
 | `catalog.game.get authentication_required` | the core has no signed-in account; sign in with OpenNOW once |
 | `session_conflict` | another client holds the core's session; wait 80-120 s for the core to release its lock |
 | `session_allocation_unresolved` / `session_allocation_recovery_required` | the core wrote `unresolved-allocation.json`; a failed allocation blocks every new session while that file sits in the way, and moving it into `backup/` is the only hand-move this layer makes |
-| `media.no_allocation` / `catalog.game.get` failure on a stated id | the app id is not in this account's library; read the ids off `files/opennowlite-games` instead |
+| `media.no_allocation` / `catalog.game.get` failure on a stated id | the app id is not in this account's library; hand the client the title's name with `--search-game-id` instead, or read the ids off the library list it prints |
 | `session.poll no-reply` and `session failed` in one round | the client was killed mid-poll; kill between rounds only |
+| `--search-game-id` refused with `unknown argument and` after the seat's own line | the name is one word to the shell: `opennowlite --search-game-id=dark and darker` splits at the space, so the client saw `--search-game-id=dark`, then the bare words `and` and `darker`; the name has to be quoted as `"dark and darker"` |
+| `opennowlite: reply for lite-library over 262144 bytes` then `launch catalog.library.list no-reply` then `session failed`, with a window on screen that never showed a queue line | the account's library is bigger than the reply bound: `catalog.library.list` answers its first page as 331,752 bytes (100 of the account's 171 games, `hasNextPage` true, `nextCursor` "MTAw"), which does not fit a 262,144-byte read, so the round died before any `session.poll` ran and no queue number ever existed - this is why the queue clock was not visible. The bound went to 1,048,576 bytes and the step became a page loop: page 1 is asked for with `{}`, and each further page with the `cursor`, `catalogRevision` and `catalogContext` the previous page published; `cursor` on its own answers `catalog_changed`, and `offset`, `after`, `first`, `limit`, `pageSize` and `search*` are ignored and answer page 1 again |
+| a `library page <n> was refused: the catalog moved while it was read` line | the vendor answered `catalog_changed` mid-read, so the client keeps the matches its pages did read, reads the library once more from page 1 and refuses to launch at all if the second read is cut short as well |
+| `The OpenNOW data directory is already in use` after `rpc core.hello` and `launch core.hello no-reply` | a second client was started while one was still streaming: the core has one data directory and its own lock, so only one client runs at a time on the seat and the earlier one is stopped before the next is asked for |
+| `opennowlite: session failed` with only `window ready` above it and no `poll attempt` line at all | the round never reached the queue: the launch died at the catalog or at a reply too big to read, so the window on the panel is not a client that hung but a client that refused - the log's last line names which |
 | a `pkill -f opennow-...` kills the ssh session itself | `-f` matches the login shell's own command line; use `pkill -TERM -x` |
 | `weston-screenshooter` answers `Output capture error: unauthorized` | only while no media has started yet; once media started it captures the streamed window (item 69) |
 | the recorded `.h264` witness does not decode | at the v1.0.5 pin the SPS/PPS ride out-of-band in the SDP: every slice answers `non-existing PPS 0 referenced` / `decode_slice_header error`, a `-c copy` mkv remux answers `dimensions not set` and a hand-prepared generic x264 SPS/PPS pair answers `illegal reordering_of_pic_nums_idc`; the witness stays the byte proof, the screenshot is the picture proof |
@@ -445,9 +576,8 @@ than the client.
 opennowlite_git.bb                          the recipe
 README.md                                   load it / run it
 PROOF.md                                    this file
-files/opennow-lite.c                        the client's source (the banner's rev 2)
+files/opennow-lite.c                        the client's source (the banner's rev 2, the name->id read at rev 3)
 files/opennowlite-launch.sh                 the launcher installed as /usr/bin/opennowlite
-files/opennowlite-games                     the library/id lookup helper: not installed, run it from this tree
 files/README.md                             the project's own switch table and FFI contract: kept beside the recipe
 files/LICENSE                               the project's own license text: kept beside the recipe
 files/0001-hand-encoded-media-to-the-host.patch   the one patch, now applied at do_patch

@@ -27,13 +27,26 @@ the client links `-ldl` only and opens its own library by absolute path.
 
 ```bash
 opennowlite --launch-app-id=ID
+opennowlite --search-game-id="dark and darker"
 ```
 
-`--launch-app-id` is required and is a CloudMatch **app id**, not a game name.
-For the ids on this board: the D&D series is `102303211`, Destiny 2 is
-`100362311`, and the helper that reads them off the account's library is
-`files/opennowlite-games` under this recipe - run it from this tree, it is not
-installed.
+A launch needs one of the two, never both. `--launch-app-id` is a CloudMatch
+**app id** and is used as it stands; `--search-game-id` is a **title's name**,
+which this client resolves itself by asking the shipped core for the same
+library the OpenNOW window lists, a page at a time - the name is matched
+case-insensitively against every title, and the one title carrying it supplies
+its own `launchAppId`. Exactly one title carrying the name is what starts a launch:
+none is refused with the count the list answered, more than one is refused with
+every title and id printed, so a launch never starts against a guess and a
+human picks one of them with `--launch-app-id` instead. Both spellings work,
+`--search-game-id=<name>` and `--search-game-id <name>`. For the ids on this
+board: the D&D series is `102303211` and Destiny 2 is `100362311`.
+
+While the vendor still holds a launch, the window's banner says the wait as the
+queue the account is paying rather than as a clock alone: `<n> QUEUES LEFT` with
+the vendor's own eta beside it, and the same number is logged once every time it
+changes. The wait's own summary line carries it too, as the position the last
+poll answered and the lowest one seen.
 
 The client opens its own xdg-shell window (`app_id=opennowlite`, 1920x1080 by
 default; `--width`/`--height`, or `--fullscreen`) and draws the stream into it
