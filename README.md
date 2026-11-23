@@ -50,29 +50,7 @@ where to put a game's own data on the seat and what command runs it.
 
 ## Where the instructions are
 
-Every recipe on its branch has two documents beside it: a `README.md` that says
-only how the package gets onto the seat - `dpkg -i` for a package that lives
-under `/usr`, `dpkg-deb -x` for a tree that has to sit on the seat's `/gamedata`
-mount - and the actual command that runs the game, with the switches that change
-map, skill, renderer or window size; and a `PROOF.md` that carries the pins, the
-sizes, the checksums, the measured rounds and the failure modes.
-
-The games above that say **by hand** are not payload recipes, and that is a
-decision and not an omission: a payload is only a recipe when its download
-source is one the rights holder authorizes, and the only carrier on hand for
-id's shareware and demo episodes is id's old `idstuff` corner as mirrored by a
-third party at `gwdg.de`, which nobody from id answers for. Those engines -
-`chocolate-doom`, `fteqw`, `ioquake3`, `eduke32`, `openjazz`, `dosbox-x` and
-`xash3d-fwgs` - stay the recipes, and their READMEs carry the rest: the payload's
-pinned name, size and md5, where to put your own copy at `/gamedata/games/<game>/`
-on the seat's data mount rather than in its nearly full root filesystem, and the
-exact command the proof round ran. The seat's own copies of those payloads are
-kept, and nothing here re-downloads them.
-
-[NOTES.md](NOTES.md) carries the layer's long notes, and the `scarthgap` branch's
-`games-table.md` carries the whole shelf - the games the seat plays, the games
-that are not a recipe and the reason in one line, and the games that are free
-both ways but have no payload on hand yet.
+Each recipie have their own unique instructions how to play the game or add the game.
 
 ## Start here
 
