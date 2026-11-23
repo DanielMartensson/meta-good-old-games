@@ -50,7 +50,7 @@ where to put a game's own data on the seat and what command runs it.
 
 ## Where the instructions are
 
-Each recipie have their own unique instructions how to play the game or add the game.
+Each recipe have their own unique instructions how to play the game or add the game.
 
 ## Start here
 
