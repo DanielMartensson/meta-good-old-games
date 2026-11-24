@@ -59,7 +59,10 @@
  *   opennowlite: launch inspect reply=<n> decision=<n> scope=<n> status=<s>
  *   opennowlite: session create reply=<n> named=<0/1> phase=<s>
  *   opennowlite: library page <n> reply=<n> bytes items=<n> more=<0/1> matched=<n>   (one line per page of the shipped core's own library list: the first page is asked for with {} and every next page with the cursor, catalog context and revision that page carried; `more` is that page's own hasNextPage and `matched` is the running count of titles carrying the name over all the pages read so far)
- *   opennowlite: library read pages=<n> items=<n> complete=<0/1>: the name "<name>" matched <n> title(s)   (--search-game-id: the summary of those pages, and a name that lands on more than one title is refused with every title and id printed)
+ *   opennowlite: library read pages=<n> items=<n> complete=<0/1>: the name "<name>" matched <n> title(s)   (--launch-game-name: the summary of those pages, and a name that lands on more than one title is refused with every title and id printed)
+ *   opennowlite: a failed allocation left its dead session at <dir>/unresolved-allocation.json: it is moved into <dir>/backup/<epoch>-unresolved-allocation.json so this launch can allocate   (the blocker a failed allocation left is moved aside at the start of every launch rather than needing a hand; a second dead allocation that comes down in the same second as an already moved one takes the next free name `<epoch>-unresolved-allocation.json.<n>` rather than going over the older one)
+ *   opennowlite: a failed allocation left its dead session at <dir>/unresolved-allocation.json and the backup directory <dir>/backup could not be made: <reason>   (the `backup` directory is made when a data directory has no `backup` yet, and what the making of it answered is named here rather than left to the following `rename`, which would only say that the name it was pointed at does not exist)
+ *   opennowlite: a failed allocation left its dead session at <dir>/unresolved-allocation.json and it could not be moved aside: <reason>   (the directory is there but the move was refused - a data directory the client's own uid cannot write is the shape that answers this)
  *   opennowlite: library page <n> was refused: the catalog moved while it was read   (the vendor answers catalog_changed mid-read; the read is then made once more from the first page)
  *   opennowlite: the name "<name>" is the title "<title>" at launchAppId <id>
  *   opennowlite: poll attempt=<n> reply=<n> session=<0/1> status=<n> phase=<s> rtsps=<n> waited=<n>s queue=<n> etaMs=<n>
@@ -1699,7 +1702,7 @@ static int json_int_at(const char *doc, const char *key)
 
 /* ---- turning a title's name into the id the launch is keyed by ---- */
 
-/* --search-game-id takes the account's own words for a title, so the id has to
+/* --launch-game-name takes the account's own words for a title, so the id has to
  * be read rather than remembered: the shipped core answers the same library the
  * OpenNOW window lists with catalog.library.list, whose items carry the title
  * and the id under launchAppId. The list is the vendor's own pages, so an item
@@ -2019,12 +2022,69 @@ static void window_banner(const char *headline, const char *clock_text,
  * (ten minutes) by default. */
 static int session_poll_attempts = 300;
 
+/* A failed allocation leaves the core's own `unresolved-allocation.json` in
+ * the data directory, and while that file sits there every new session.create
+ * is answered `session_allocation_recovery_required` and no game allocates at
+ * all. The streaming rounds of the audit moved that file into
+ * `backup/<epoch>-unresolved-allocation.json` by hand before each round; the
+ * client makes that same move at the start of every launch, so a game no
+ * longer needs a hand to clear the blocker. With --data-dir the move follows
+ * the stated directory; the default is the seat's `~/.config/OpenNOW`. */
+static void recover_dead_allocation(const char *data_dir)
+{
+    char dir[512];
+    if (data_dir && *data_dir)
+        snprintf(dir, sizeof(dir), "%s", data_dir);
+    else {
+        const char *home = getenv("HOME");
+        if (!home || !*home)
+            return;
+        snprintf(dir, sizeof(dir), "%s/.config/OpenNOW", home);
+    }
+    char from[600];
+    snprintf(from, sizeof(from), "%s/unresolved-allocation.json", dir);
+    struct stat seen;
+    if (stat(from, &seen) != 0)
+        return;
+    char backup[600];
+    snprintf(backup, sizeof(backup), "%s/backup", dir);
+    if (mkdir(backup, 0755) != 0 && errno != EEXIST) {
+        fprintf(stderr,
+                "opennowlite: a failed allocation left its dead session at %s and "
+                "the backup directory %s could not be made: %s\n",
+                from, backup, strerror(errno));
+        return;
+    }
+    char to[700];
+    snprintf(to, sizeof(to), "%s/%lld-unresolved-allocation.json",
+             backup, (long long)time(NULL));
+    for (int bump = 1;; bump++) {
+        struct stat held;
+        if (stat(to, &held) != 0)
+            break;
+        snprintf(to, sizeof(to), "%s/%lld-unresolved-allocation.json.%d",
+                 backup, (long long)time(NULL), bump);
+    }
+    if (rename(from, to) != 0) {
+        fprintf(stderr,
+                "opennowlite: a failed allocation left its dead session at "
+                "%s and it could not be moved aside: %s\n",
+                from, strerror(errno));
+        return;
+    }
+    fprintf(stderr,
+            "opennowlite: a failed allocation left its dead session at %s: it "
+            "is moved into %s so this launch can allocate\n",
+            from, to);
+}
+
 /* The id this launch is keyed by comes out of here rather than out of the
- * command line alone, because --search-game-id turns a name into that id by
+ * command line alone, because --launch-game-name turns a name into that id by
  * asking the core, and the copy of it is what the streamer is started with. */
 static bool session_open(const char *variant_id, const char *search_name,
                          const char *data_dir, char *launch_id)
 {
+    recover_dead_allocation(data_dir);
     core_rpc = core_start(data_dir);
     if (!core_rpc) {
         fprintf(stderr, "opennowlite: core process unavailable: %s\n",
@@ -2060,7 +2120,7 @@ static bool session_open(const char *variant_id, const char *search_name,
      * that stops early is made once more from the first page before the name
      * is given up on. An id is never guessed at: a name that lands on more
      * than one title is refused with every title printed, so a human picks one
-     * and relaunches with that --launch-app-id. */
+     * and relaunches with that --launch-game-id. */
     if (search_name && *search_name) {
         char titles[LIBRARY_MAX_MATCHES][LIBRARY_TITLE_MAX];
         char ids[LIBRARY_MAX_MATCHES][LIBRARY_ID_MAX];
@@ -2145,7 +2205,7 @@ static bool session_open(const char *variant_id, const char *search_name,
             fprintf(stderr,
                     "opennowlite: refusing a launch from a library that was "
                     "read twice and changed twice: name a title above with "
-                    "--launch-app-id=<id>, or ask for the name again\n");
+                    "--launch-game-id=<id>, or ask for the name again\n");
             return false;
         }
         if (matched == 0) {
@@ -2170,7 +2230,7 @@ static bool session_open(const char *variant_id, const char *search_name,
                         shown, matched);
             fprintf(stderr,
                     "opennowlite: refusing a launch against a guessed title: "
-                    "name one of the titles above with --launch-app-id=<id>\n");
+                    "name one of the titles above with --launch-game-id=<id>\n");
             return false;
         }
         snprintf(named, sizeof(named), "%s", ids[0]);
@@ -4042,29 +4102,40 @@ static unsigned long pilot_list_parse(const char *list)
 
 /* ---- main ---- */
 
-static void usage(const char *argv0)
+/* the flags list alone: what a wrong or unknown flag answers with. */
+static void usage_flags(const char *argv0)
 {
     fprintf(stderr,
-            "usage: %s [--launch-app-id=ID | --search-game-id=NAME] [--data-dir DIR] [--fullscreen]\n"
+            "usage: %s [--launch-game-id=ID | --launch-game-name=NAME] [--data-dir DIR] [--fullscreen]\n"
             "       [--show-cursor] [--mouse-absolute] [--mouse-look=P] [--no-pointer-lock] [--width N] [--height N] [--pipeline DESC] [--test-pattern]\n"
             "       [--auto-pilot] [--pilot-at=S] [--pilot-times=N] [--pilot-gap=S]\n"
             "       [--pilot-click] [--pilot-point=WxH]\n"
             "       [--record=FILE] [--record-seconds=S] [--record-from=S] [--poll-attempts=N]\n"
-            "       [--search-game-id=NAME | --search-game-id NAME]\n"
+            "       [--launch-game-name=NAME | --launch-game-name NAME]\n"
             "       [--debug-input] [--debug-audio=FILE] [--debug-audio-seconds=S]\n"
             "       [--media-dead=S]\n"
-            "  --search-game-id takes a title's name in place of an id and asks\n"
+            "       [--help]\n",
+            argv0);
+}
+
+/* the flags list above plus what each of them does: this is what
+   --help prints in full. */
+static void usage(const char *argv0)
+{
+    usage_flags(argv0);
+    fprintf(stderr,
+            "  --launch-game-name takes a title's name in place of an id and asks\n"
             "  the shipped core for the same library the OpenNOW window lists,\n"
             "  so an id never has to be remembered or looked up by hand. The\n"
             "  name is matched case-insensitively against every item's title\n"
             "  and the id comes from that item's own launchAppId; the attached\n"
-            "  --search-game-id=<name> and the separate --search-game-id <name>\n"
+            "  --launch-game-name=<name> and the separate --launch-game-name <name>\n"
             "  spellings are the same switch. Exactly one title carrying the\n"
             "  name is what starts a launch, and the log names the title it\n"
             "  landed on. No title carrying it is refused with the number of\n"
             "  items the list did answer, and more than one is refused with\n"
             "  every title and every id printed, so that a human picks one and\n"
-            "  relaunches with that --launch-app-id: a launch is never started\n"
+            "  relaunches with that --launch-game-id: a launch is never started\n"
             "  against a guessed title. Giving a name and an id together is\n"
             "  refused too, since that is one launch asked for two ways.\n"
             "  the default launch opens the seat's signed-in session and streams\n"
@@ -4177,7 +4248,16 @@ static void usage(const char *argv0)
             "  +930 s, +1 080 s and +1 220 s of session and its acts ran at\n"
             "  +602s, +702s and +802s - a window no witness ever covered. The\n"
             "  window is a raw stream that starts mid-GOP, so the frames up to\n"
-            "  its next keyframe are not decodable.\n",
+            "  its next keyframe are not decodable.\n"
+            "  --help prints all of this text; a wrong or unknown flag\n"
+            "  prints the flags list at the top alone.\n"
+            "  A launch that finds the core's own `unresolved-allocation.json`\n"
+            "  in its data directory - the dead session a failed allocation\n"
+            "  left, which answers every new session.create with\n"
+            "  `session_allocation_recovery_required` - moves it into\n"
+            "  `backup/<epoch>-unresolved-allocation.json` before it asks for\n"
+            "  a session, so starting a game no longer needs a hand to\n"
+            "  clear that file first.\n",
             argv0);
 }
 
@@ -4211,35 +4291,35 @@ int main(int argc, char **argv)
         "sync=false";
 
     for (int i = 1; i < argc; i++) {
-        if (strncmp(argv[i], "--launch-app-id=", 16) == 0) {
-            variant_id = argv[i] + 16;
-        } else if (strncmp(argv[i], "--search-game-id=", 17) == 0) {
+        if (strncmp(argv[i], "--launch-game-id=", 17) == 0) {
+            variant_id = argv[i] + 17;
+        } else if (strncmp(argv[i], "--launch-game-name=", 19) == 0) {
             /* a name rather than an id: the id is read off the shipped core's
              * own library list, so nothing about the account is scraped */
             if (search_name) {
-                fprintf(stderr, "opennowlite: --search-game-id given twice: \"%s\" and \"%s\"\n",
-                        search_name, argv[i] + 17);
-                usage(argv[0]);
+                fprintf(stderr, "opennowlite: --launch-game-name given twice: \"%s\" and \"%s\"\n",
+                        search_name, argv[i] + 19);
+                usage_flags(argv[0]);
                 return 2;
             }
-            search_name = argv[i] + 17;
+            search_name = argv[i] + 19;
             if (!search_name[0]) {
-                fprintf(stderr, "opennowlite: --search-game-id= wants a name\n");
-                usage(argv[0]);
+                fprintf(stderr, "opennowlite: --launch-game-name= wants a name\n");
+                usage_flags(argv[0]);
                 return 2;
             }
-        } else if (strcmp(argv[i], "--search-game-id") == 0) {
+        } else if (strcmp(argv[i], "--launch-game-name") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr,
-                        "opennowlite: --search-game-id wants the name as its "
-                        "next word or attached as --search-game-id=<name>\n");
-                usage(argv[0]);
+                        "opennowlite: --launch-game-name wants the name as its "
+                        "next word or attached as --launch-game-name=<name>\n");
+                usage_flags(argv[0]);
                 return 2;
             }
             if (search_name) {
-                fprintf(stderr, "opennowlite: --search-game-id given twice: \"%s\" and \"%s\"\n",
+                fprintf(stderr, "opennowlite: --launch-game-name given twice: \"%s\" and \"%s\"\n",
                         search_name, argv[i + 1]);
-                usage(argv[0]);
+                usage_flags(argv[0]);
                 return 2;
             }
             search_name = argv[++i];
@@ -4254,7 +4334,7 @@ int main(int argc, char **argv)
             pilot_press_count = pilot_list_parse(argv[i] + 11);
             if (pilot_press_count == 0u) {
                 fprintf(stderr, "opennowlite: --pilot-at wants a comma list of seconds\n");
-                usage(argv[0]);
+                usage_flags(argv[0]);
                 return 2;
             }
             pilot_at_given = true;
@@ -4276,7 +4356,7 @@ int main(int argc, char **argv)
             if (sscanf(argv[i] + 14, "%dx%d", &pilot_point_x,
                        &pilot_point_y) != 2) {
                 fprintf(stderr, "opennowlite: --pilot-point wants WxH\n");
-                usage(argv[0]);
+                usage_flags(argv[0]);
                 return 2;
             }
         } else if (strcmp(argv[i], "--fullscreen") == 0) {
@@ -4308,7 +4388,7 @@ int main(int argc, char **argv)
             if (mouse_look_percent < 25u || mouse_look_percent > 400u) {
                 fprintf(stderr,
                         "opennowlite: --mouse-look wants 25..400 percent\n");
-                usage(argv[0]);
+                usage_flags(argv[0]);
                 return 2;
             }
         } else if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
@@ -4324,7 +4404,7 @@ int main(int argc, char **argv)
             if (session_poll_attempts < 1) {
                 fprintf(stderr,
                         "opennowlite: --poll-attempts wants a positive count\n");
-                usage(argv[0]);
+                usage_flags(argv[0]);
                 return 2;
             }
         } else if (strcmp(argv[i], "--debug-input") == 0) {
@@ -4341,7 +4421,7 @@ int main(int argc, char **argv)
             if (media_dead_seconds < 0 || media_dead_seconds > 900) {
                 fprintf(stderr,
                         "opennowlite: --media-dead wants 0..900 seconds\n");
-                usage(argv[0]);
+                usage_flags(argv[0]);
                 return 2;
             }
         } else if (strcmp(argv[i], "--help") == 0) {
@@ -4349,30 +4429,30 @@ int main(int argc, char **argv)
             return 0;
         } else {
             fprintf(stderr, "opennowlite: unknown argument %s\n", argv[i]);
-            usage(argv[0]);
+            usage_flags(argv[0]);
             return 2;
         }
     }
     if (!test_pattern && !variant_id && !search_name) {
-        fprintf(stderr, "opennowlite: --launch-app-id or --search-game-id is required\n");
-        usage(argv[0]);
+        fprintf(stderr, "opennowlite: --launch-game-id or --launch-game-name is required\n");
+        usage_flags(argv[0]);
         return 2;
     }
     if (search_name && !search_name[0]) {
         fprintf(stderr,
-                "opennowlite: --search-game-id was given an empty name: a "
+                "opennowlite: --launch-game-name was given an empty name: a "
                 "name that matches nothing is refused once the list is read, "
                 "an empty one matches every title\n");
-        usage(argv[0]);
+        usage_flags(argv[0]);
         return 2;
     }
     if (variant_id && search_name) {
         fprintf(stderr,
-                "opennowlite: --launch-app-id=%s and the name \"%s\" ask for "
+                "opennowlite: --launch-game-id=%s and the name \"%s\" ask for "
                 "one launch two ways: a name is resolved against the library, "
                 "an id is used as it is\n",
                 variant_id, search_name);
-        usage(argv[0]);
+        usage_flags(argv[0]);
         return 2;
     }
     if (width < 64 || height < 64) {

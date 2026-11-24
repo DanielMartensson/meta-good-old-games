@@ -100,8 +100,52 @@ S = "${WORKDIR}/git"
 # from 262144 to 1048576 bytes, which is what one page of this account's own
 # library list needs (331752 B measured on the seat), so the client that refuses
 # to launch a name and the client that launches one are different clients and the
-# version has to say so.
-PKGR = "r2.14"
+# version has to say so. The counter moves one more time to r2.15 on Nov 23 2026
+# because rev 4 at 210162 B (md5 62b5d65000f1dda0290710e0fc87a2b1) moves the
+# client again: the two launch flags take the names the user types at them
+# (--search-game-id becomes --launch-game-name, which does read the id AND
+# starts the game, and --launch-app-id becomes --launch-game-id), --help now
+# prints the whole usage text while a wrong or unknown flag prints only the
+# flags list above it rather than all the explanations, and every launch now
+# moves the core's own `unresolved-allocation.json` - the dead session a
+# failed allocation left, which otherwise blocks every new session with
+# session_allocation_recovery_required - into `backup/<epoch>-unresolved-
+# allocation.json` at its start, the same hand-move the audit rounds made
+# before each round of them, now made by the client itself. That move did not
+# work as rev 4 had it: rev 4 ignored what `mkdir` of the `backup` directory
+# answered, so a data directory that has no `backup` yet - and every data
+# directory the client is pointed at with `--data-dir` that the seat's own
+# rounds did not use - answered `No such file or directory` out of the
+# `rename` after it rather than out of the `mkdir` that had just failed, and
+# the blocker stayed exactly where it was. So the counter moves one more time
+# to r2.16 on Nov 24 2026 for rev 5 at 211555 B (md5 d9cdeb215c57b87bd37736c02c0eb741),
+# which keeps the same move but reads what `mkdir` answered (a directory that
+# is already there answers `EEXIST` and is kept, since the seat's own data
+# directory has had a `backup` since the first hand-move of item 66) and
+# names the directory it could not make in the log line when it is a real
+# refusal, and which no longer lets two dead allocations that come down in
+# the same second move onto one name: the second one goes to
+# `backup/<epoch>-unresolved-allocation.json.1` rather than over the first,
+# so the move can never eat an older dead allocation. What r2.16 is on the
+# seat, though, is a move that still did not move: rev 5 names the variable
+# that ALREADY carries `<data-dir>/backup` and then writes the destination as
+# `<that>/backup/<epoch>-...`, so the name it points at sits one level below
+# a `<data-dir>/backup/backup` that is never created, and the `rename` answers
+# `No such file or directory` there. Measured twice: on the seat against a
+# scratch data directory the client's own uid could write, where the log
+# answered the move-refusal line and the blocker stayed in the data directory
+# while the core's own `backup/` sat empty; and against the same code as a
+# standalone replica off the layer, where three blockers planted one after
+# another refused the same way every time. So the counter moves one more time
+# to r2.17 on Nov 24 2026 for rev 6 at 211541 B (md5 aca3e5e4a7f1d09fc45df3b2e0163a5d),
+# which is rev 5 with the destination written from that variable as it is
+# rather than through a second `backup` level, so the move is
+# `<data-dir>/backup/<epoch>-unresolved-allocation.json` - the same name the
+# audit's own hand-moves used - and the collision bump stays off the same
+# second, where the replica of this rev moved three blockers planted inside
+# one second to `<epoch>-...json`, `.1` and `.2` and said nothing at all when
+# a data directory carries no blocker.
+PKGR = "r2.17"
 
 DEPENDS = " \
     gstreamer1.0 \

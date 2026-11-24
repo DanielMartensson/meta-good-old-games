@@ -29,7 +29,7 @@ is the tree the seat's older package was built from.
 What the package is and what was proven
 --------------------------------------
 
-The recipe builds `1.0.5+release+git0+a9de957a59-r2.14`:
+The recipe builds `1.0.5+release+git0+a9de957a59-r2.16`:
 
 ```
 upstream   OpenCloudGaming/OpenNOW  tag v1.0.5  =  a9de957a5902c54186e9d4b44b1562f0b6beb951
@@ -47,7 +47,7 @@ It installs three files and nothing else:
 ```
 
 Proof rounds ran end to end on the seat with that client, on Destiny 2
-(`--launch-app-id=100362311`): picture, audio, keyboard, mouse, at the frame
+(`--launch-game-id=100362311`): picture, audio, keyboard, mouse, at the frame
 rate the streamer's own counters report. Every number from those rounds - the
 deb sizes and md5s, the delivered input counts, the audio packet counts, the
 resident memory and the CPU share - is in [../PROOF.md](../PROOF.md); this file
@@ -124,10 +124,10 @@ it on the seat. There is no configure/make on the seat and no `apt`.
    ```console
    # dpkg -s opennowlite
    Package: opennowlite
-   Version: 1.0.5+release+git0+a9de957a59-r2.14
+   Version: 1.0.5+release+git0+a9de957a59-r2.16
    ```
 
-   Because `PKGR` moved, `dpkg -i` answers `over (...-r2.13)` and replaces the
+   Because `PKGR` moved, `dpkg -i` answers `over (...-r2.15)` and replaces the
    client the seat carries rather than refusing a same-version install.
 
 No reboot. The seat's desktop is a plain Wayland compositor, so a new package
@@ -140,7 +140,7 @@ Quick start
 -----------
 
 ```bash
-opennowlite --launch-app-id=100362311
+opennowlite --launch-game-id=100362311
 ```
 
 The launcher keeps whatever Wayland session the desktop already gives you and
@@ -151,7 +151,7 @@ still read what the screen showed, launch it detached:
 
 ```bash
 XDG_RUNTIME_DIR=/home/weston WAYLAND_DISPLAY=wayland-1 \
-  setsid nohup opennowlite --launch-app-id=ID \
+  setsid nohup opennowlite --launch-game-id=ID \
   >/gamedata/run/lite.log 2>&1 </dev/null &
 ```
 
@@ -186,12 +186,13 @@ Picking a game by name
 ----------------------
 
 The client takes a CloudMatch **app id**, and it can be handed a game's **name**
-instead with `--search-game-id`, which asks the shipped core for the same
+instead with `--launch-game-name` - the name does both steps, the id read and
+the game started, in one call - which asks the shipped core for the same
 library the OpenNOW window lists and takes the id off the title that carries
 the name:
 
 ```console
-$ opennowlite --search-game-id="dark and darker"
+$ opennowlite --launch-game-name="dark and darker"
 opennowlite: library page 1 reply=<n> bytes items=100 more=1 matched=1
 opennowlite: library page 2 reply=<n> bytes items=71 more=0 matched=1
 opennowlite: library read pages=2 items=171 complete=1: the name "dark and darker" matched 1 title(s)
@@ -210,8 +211,8 @@ carrying the name is what starts a launch, and the log names the title it landed
 on. No title carrying it is refused with the number of items the pages did
 answer; more than one is refused with every title and every id printed, so a
 launch is never started against a guess and a human picks one with
-`--launch-app-id=<id>` instead. Both spellings work, `--search-game-id=<name>`
-and `--search-game-id <name>`; giving a name and an id together is refused too,
+`--launch-game-id=<id>` instead. Both spellings work, `--launch-game-name=<name>`
+and `--launch-game-name <name>`; giving a name and an id together is refused too,
 since that is one launch asked for two ways.
 
 
@@ -233,9 +234,13 @@ the CloudMatch consent, using the seat's existing signed-in account:
 * If that record is missing or unreadable, the launch dies at
   `catalog.game.get authentication_required` after about 11 s. Put the record
   back or sign in again with OpenNOW, and never move that file to a backup:
-  it is what makes a game launch at all. The only OpenNOW file ever moved to
-  `backup/` is `unresolved-allocation.json`, which is a *failed allocation*, not
-  a credential.
+  it is what makes a game launch at all. The other OpenNOW file the seat sees,
+  `unresolved-allocation.json`, is a *failed allocation*: while it sits in the
+  data directory it answers every new `session.create` with
+  `session_allocation_recovery_required` and no game starts at all. The client
+  now moves it into `backup/<epoch>-unresolved-allocation.json` at the start of
+  every launch by itself, so a new game needs no hand to clear it first, and
+  nothing is ever deleted.
 * Do not hand-edit the record; the hash in its filename is not something to
   invent.
 * `--data-dir DIR` makes the core use another data directory, which is how a
@@ -246,12 +251,15 @@ Command line
 ------------
 
 A switch may be written `--flag=value` or `--flag value`. `--help` prints the
-same list the client parses.
+client's own full help text: the flags list and every explanation under it.
+A wrong or unknown flag answers the flags list alone rather than all the
+explanations. The examples below show what each placeholder takes.
 
 | Switch | Meaning |
 | --- | --- |
-| `--launch-app-id=N` **(one of the two)** | CloudMatch app id (a positive integer). Not a game name or slug — a name goes to `--search-game-id`. |
-| `--search-game-id=NAME` `--search-game-id NAME` | A title's name instead of an id: the shipped core's own `catalog.library.list` is asked and the item whose title contains NAME supplies its `launchAppId`. Case-insensitive, deduped by id. Refused when no title or more than one title carries the name, the second time with every title and id printed. |
+| `--launch-game-id=N` **(one of the two)** | CloudMatch app id (a positive integer). Not a game name or slug — a name goes to `--launch-game-name`. |
+| `--launch-game-name=NAME` `--launch-game-name NAME` | A title's name instead of an id: the shipped core's own `catalog.library.list` is asked and the item whose title contains NAME supplies its `launchAppId`, and the game then starts. Case-insensitive, deduped by id. Refused when no title or more than one title carries the name, the second time with every title and id printed. |
+| `--help` | Print the whole help text: the flags list and every explanation. |
 | `--fullscreen` | Make the window the whole screen instead of a windowed surface. |
 | `--width=N` `--height=N` | Window size, 1920x1080 by default. |
 | `--test-pattern` | Open the window and play a test pattern through the default GStreamer description, with no session at all. |
@@ -272,7 +280,49 @@ same list the client parses.
 | `--media-dead=S` | Stop after S seconds. |
 | `--data-dir=DIR` | Run the shipped core against another copy of its data directory. |
 
-The streamer library reads `OPENNOW_MOUSE_SENSITIVITY` (0.1..3.0) and
+The placeholders, with worked examples - `FILE` is any path the seat can write
+to, and `/gamedata/run/` is where the witness files of the audit rounds went:
+
+```bash
+# launch by name: the id is read AND the game starts, one call
+opennowlite --launch-game-name="dark and darker"
+
+# launch by id, with a window that is not the default 1920x1080
+opennowlite --launch-game-id=102303211 --width=1280 --height=720
+
+# keep a 180 s picture witness that starts 170 s into the session, and give up
+# when the picture has not advanced for 120 s
+opennowlite --launch-game-id=100362311 \
+  --record=/gamedata/run/witness.h264 --record-seconds=180 --record-from=170 \
+  --media-dead=120
+
+# the notice clock by hand: press Return at +63 s and +212 s, then jiggle the
+# pointer 40 times 90 s apart, and click once at the middle at the end
+opennowlite --launch-game-id=100362311 \
+  --auto-pilot --pilot-at=63:r,212:r --pilot-times=40 --pilot-gap=90 \
+  --pilot-click --pilot-point=960x540
+
+# also keep the first 30 s of sound as Opus packets, and stamp what every key
+# and click cost
+opennowlite --launch-game-id=100362311 \
+  --debug-input --debug-audio=/gamedata/run/sound.packets --debug-audio-seconds=30
+
+# poll the allocation for 5 minutes rather than the default ten
+opennowlite --launch-game-id=102303211 --poll-attempts=150
+
+# turn: one swept pixel is worth 150 % of the default half-turn scale
+opennowlite --launch-game-id=102303211 --mouse-look=150
+```
+
+So `FILE` above is like `/gamedata/run/sound.packets`, `S` is seconds (180 s of
+picture, 30 s of sound, a 90 s gap), `N` is a count (`--pilot-times=40`,
+`--poll-attempts=150`), `P` is a percent 25..400 and `WxH` is pixels
+(`960x540` is the middle of the default window). `--pilot-at` carries its own
+mini spelling: seconds after the stream starts, optionally `:` plus a key -
+`r` Return, `e` Escape, `s` Space, `c` a click at `--pilot-point`, `:k57` the
+physical Space by evdev scancode.
+
+
 `OPENNOW_MOUSE_ACCELERATION` (1.0..150.0) from the process environment through a
 once-evaluated lock, so a client that was execed bare cannot set them - `--mouse-look`
 is the same scaling where it can.
@@ -326,7 +376,10 @@ in [../PROOF.md](../PROOF.md). The short version: a launch that answers
 `session_conflict` means the core still holds a session and releases its lock
 after 80-120 s; `media.no_allocation` means the app id is wrong or the game is
 not available to this account; and `catalog.game.get authentication_required`
-means the core has no signed-in account to use.
+means the core has no signed-in account to use. A launch that met a dead
+allocation from a previous failure moves it into `backup/` itself first and
+says so on the log, so `session_allocation_recovery_required` should no longer
+need a hand at all.
 
 
 Layout

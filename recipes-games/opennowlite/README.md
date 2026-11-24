@@ -26,21 +26,31 @@ the client links `-ldl` only and opens its own library by absolute path.
 ## Run it
 
 ```bash
-opennowlite --launch-app-id=ID
-opennowlite --search-game-id="dark and darker"
+opennowlite --launch-game-id=ID
+opennowlite --launch-game-name="dark and darker"
+opennowlite --help
 ```
 
-A launch needs one of the two, never both. `--launch-app-id` is a CloudMatch
-**app id** and is used as it stands; `--search-game-id` is a **title's name**,
-which this client resolves itself by asking the shipped core for the same
+A launch needs one of the two, never both. `--launch-game-id` is a CloudMatch
+**app id** and is used as it stands; `--launch-game-name` is a **title's name**
+and does both steps in one call, reading the id AND starting the game: this
+client resolves it itself by asking the shipped core for the same
 library the OpenNOW window lists, a page at a time - the name is matched
 case-insensitively against every title, and the one title carrying it supplies
 its own `launchAppId`. Exactly one title carrying the name is what starts a launch:
 none is refused with the count the list answered, more than one is refused with
 every title and id printed, so a launch never starts against a guess and a
-human picks one of them with `--launch-app-id` instead. Both spellings work,
-`--search-game-id=<name>` and `--search-game-id <name>`. For the ids on this
+human picks one of them with `--launch-game-id` instead. Both spellings work,
+`--launch-game-name=<name>` and `--launch-game-name <name>`. For the ids on this
 board: the D&D series is `102303211` and Destiny 2 is `100362311`.
+
+A launch that finds the dead session of a previous failed allocation - the core's
+own `unresolved-allocation.json`, which otherwise blocks every new game with
+`session_allocation_recovery_required` - moves it into `backup/` with the epoch
+in its name by itself before asking for a session, so a new game starts without
+a hand clearing anything. `--help` prints the client's whole switch text; a
+wrong flag prints the flags list alone. The switch examples - what `FILE`,
+`S`, `N`, `P` and `WxH` take in practice - are in `files/README.md`.
 
 While the vendor still holds a launch, the window's banner says the wait as the
 queue the account is paying rather than as a clock alone: `<n> QUEUES LEFT` with
@@ -90,7 +100,7 @@ of it.
 Pins, patch, the measured rounds, the failure-mode table and the open items for
 this client are in [PROOF.md](PROOF.md); the numbered rounds that changed this
 client are recorded in the layer's shared running log, in
-`../opennow/PROOF.md`, whose items 66-69 are quoted by number here.
+`../opennow/PROOF.md`, whose items 66-69 and 81 are quoted by number here.
 
 ## Files
 
