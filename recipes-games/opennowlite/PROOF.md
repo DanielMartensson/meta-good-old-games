@@ -595,3 +595,156 @@ The whole layer was built again from this restructured tree at its own path: `bi
 | `opennowlite-src_1.0.5+release+git0+a9de957a59-r2.13_arm64.deb` | 5,848 B | `2a7d0556b0eebb97b02a0b1f89e184e7` |
 
 This is the re-homed build: the client's tree is fetched and this recipe's one patch is applied to it, and the counter moved to `r2.13` because `opennow-lite.c` moved (rev 1's 187,175 B md5 `e5bc80c820f84f245a0ebd109753a0c7` became rev 2's 187,717 B md5 `36a9f99a029affa9c1117dabfa0a1528`). What the deb installs: `/usr/bin/opennow-lite` 134,480 B md5 `fe36278b43be95c319910d912e573070`, `/usr/bin/opennowlite` 829 B md5 `d0102c5535a4eb16dd28e2402796007a` (byte-identical to the launcher on the seat) and `/usr/lib/opennowlite/libopennowlite_streamer_ffi.so` 11,376,152 B md5 `b6df64b4ae16f9193797bdda3c1c2bda`. Against the seat's `...-r2.12` (deb 3,600,356 B md5 `c38b83e2eed1fa37c4b14c2654d48fa9`, client `5e1c2c5defe86053cb7ee4f6ab424f8d`, library `4abd0fc739c4cf28e87dbbf0eb88cd63`) the deb grew 6,664 B and both artifacts moved md5 while the launcher stayed: the library is built out of a fetched tree at a different path and with different mtimes, which is what its md5 has to answer for. The seat still runs `...-r2.12`, since replacing it means stopping the client that is streaming now.
+
+## The three rounds that renamed the launch flags and made the client clear the core's own blocker (2026-11-23/24)
+
+The user's complaint that started this: the two flags they had been typing at the client
+were refused, and the game would not start at all because a file the core owns sat in its
+data directory. Both belong to this recipe and neither was touched anywhere else: the core
+and its behaviour stayed as it is, `OpenNOW` itself is untouched, and the client stayed in C.
+
+The blocker is the core's own `unresolved-allocation.json`. When an allocation fails the
+core leaves that file in `~/.config/OpenNOW` and answers every later `session.create` with
+`session_allocation_recovery_required`, so no game allocates at all until the file is out
+of the way. The audit's own rounds cleared it by hand before each of them, moving it to
+`backup/<epoch>-unresolved-allocation.json` and never deleting it. This round makes the
+client do the same move at the top of every launch, so a hand stops being part of starting
+a game.
+
+### rev 4 — the client the seat got first (r2.15)
+
+`opennow-lite.c` 210,162 B md5 `62b5d65000f1dda0290710e0fc87a2b1`. `bitbake opennowlite`
+227 s, `Attempted 5996 tasks of which 5975 didn't need to be rerun and all succeeded` (21
+tasks rerun), no WARNING, no ERROR, no QA note. Deb family
+`1.0.5+release+git0+a9de957a59-r2.15`: base 3,608,704 B md5 `1a2acb10ac552d2ed8df48fd1203dcba`,
+and the installed client 134,512 B md5 `ec70ebdcd2c1031d200d277becb7ce51`, over
+`...-r2.14` with `dpkg -i` answering `over (...)` and rc 0.
+
+What it did that was right, measured on the seat:
+
+- `--help` answers rc 0 with the whole usage text; a wrong or unknown flag answers rc 2 with
+  the flags list at the top alone, which is what the user of a flag-wall needs.
+- the names the user types: `--launch-game-name="dark and darker"` reads the id off the
+  shipped library AND starts the game, and `--launch-game-id=ID` is the id route; the two
+  older names are refused rather than silently accepted.
+
+What it did that was wrong, measured on the seat against a scratch data directory the
+client's own uid could write:
+
+```console
+opennowlite: a failed allocation left its dead session at /tmp/nowprobe/unresolved-allocation.json and it could not be moved aside: No such file or directory
+```
+
+and the blocker stayed exactly where it was. The reason is in the code: `mkdir` of the
+`backup` directory was never read, so a data directory with no `backup` in it failed there
+and the following `rename` only reported that the name it pointed at did not exist. Two
+dead allocations landing in one second also moved onto one name, which would have eaten an
+older dead allocation.
+
+### rev 5 — the same move with the `mkdir` answered (r2.16)
+
+`opennow-lite.c` 211,555 B md5 `d9cdeb215c57b87bd37736c02c0eb741`. `bitbake opennowlite`
+103 s, 20 tasks rerun, no WARNING/ERROR/QA note. Deb family `...-r2.16`: base 3,607,708 B
+md5 `f2ccdd59386ab5b39d3b76be9e12d039`, `-dbg` 69,728 B md5 `36db2af51f5e5e375381fca547ccb954`,
+`-dev` 1,468 B md5 `154ce400e20e416483471be191c1a80e`, `-src` 5,848 B md5
+`6794f027252d94de4e15cfa6d7221e62`; seat carries it (`dpkg -s opennowlite` version
+`1.0.5+release+git0+a9de957a59-r2.16`), installed client 134,512 B md5
+`0a650a47335b33144833e0cbeeb392ca`.
+
+It names the directory it could not make when the making of it is a real refusal, keeps an
+already-present `backup` (an `EEXIST` from `mkdir` is kept), and bumps a same-second
+collision to `<epoch>-unresolved-allocation.json.1`. Measured, it still did not move the
+blocker: the seat's scratch test answered the move-refusal line again and the file stayed
+put, and the same code as a standalone replica off the layer refused three planted
+blockers the same way every time. The reason: the variable that carries the destination's
+directory already holds `<data-dir>/backup`, and the destination was then written through a
+second `backup/` level, so the name sat under a `<data-dir>/backup/backup` that is never
+created. So this is a documented failed attempt of the same audit item, kept rather than
+hidden.
+
+### rev 6 — the move that works (r2.17, the client the seat runs)
+
+`opennow-lite.c` 211,541 B md5 `aca3e5e4a7f1d09fc45df3b2e0163a5d`. `bitbake opennowlite`
+90 s, `Attempted 5996 tasks of which 5976 didn't need to be rerun and all succeeded` (20
+tasks rerun), no WARNING, no ERROR, no QA note. Deb family
+`1.0.5+release+git0+a9de957a59-r2.17`: base 3,608,568 B md5 `5f64729f2f0353750baf48af88aacf3f`,
+`-dbg` 69,780 B md5 `d748e3b977c8e1807a6d0675a6737dfc`, `-dev` 1,468 B md5
+`38033f583aa751e37b67d407320589ae`, `-src` 5,848 B md5 `9db17ad2b3ed4e971efe675f58dc2961`.
+`dpkg -i` over `...-r2.16` answers `over (...)` and rc 0; `dpkg -s opennowlite` answers
+`Version: 1.0.5+release+git0+a9de957a59-r2.17`. What it installs: `/usr/bin/opennow-lite`
+134,512 B md5 `fdc3a8a7611eb92e1e35763872f32de4`, `/usr/bin/opennowlite` 829 B md5
+`d0102c5535a4eb16dd28e2402796007a` (byte-identical to the launcher the seat already ran) and
+`/usr/lib/opennowlite/libopennowlite_streamer_ffi.so` 11,376,152 B md5
+`b6df64b4ae16f9193797bdda3c1c2bda` (byte-identical to the library on the seat) — this round
+moves the C client and nothing else.
+
+The flag wall, run on the seat as uid 1000 (`HOME=/home/weston`):
+
+```console
+# su weston -c '/usr/bin/opennow-lite --help 2>/tmp/h-r217.txt; echo rc=$?'
+rc=0
+143 /tmp/h-r217.txt
+# su weston -c '/usr/bin/opennow-lite --frobnicate 2>/tmp/x-r217.txt; echo rc=$?'
+rc=2
+10 /tmp/x-r217.txt          <- the flags list alone, no explanations
+# su weston -c '/usr/bin/opennow-lite --search-game-id="dark and darker" 2>/tmp/a.txt; echo rc=$?'
+rc=2   10 lines   opennowlite: unknown argument --search-game-id=dark and darker
+# su weston -c '/usr/bin/opennow-lite --launch-app-id=100362311 2>/tmp/b.txt; echo rc=$?'
+rc=2   10 lines   opennowlite: unknown argument --launch-app-id=100362311
+```
+
+The move, against a scratch data directory the client's own uid could write:
+
+```console
+# su weston -c 'timeout 40 /usr/bin/opennow-lite --launch-game-id=100362311 --data-dir /tmp/nowprobe2 2>/tmp/move-r217.txt; echo rc=$?'
+rc=1
+opennowlite: a failed allocation left its dead session at /tmp/nowprobe2/unresolved-allocation.json: it is moved into /tmp/nowprobe2/backup/1795479421-unresolved-allocation.json so this launch can allocate
+/tmp/nowprobe2:                 no unresolved-allocation.json left in it
+/tmp/nowprobe2/backup:          1795479421-unresolved-allocation.json
+```
+
+And against the core's own directory, where a launch of the client at uid 1000 cleared the
+dead allocation from the user's own failed attempt:
+
+```console
+# su weston -c 'timeout 60 /usr/bin/opennow-lite --launch-game-id=102303211 2>/tmp/real-r217.txt; echo rc=$?'
+rc=124
+opennowlite: a failed allocation left its dead session at /home/weston/.config/OpenNOW/unresolved-allocation.json: it is moved into /home/weston/.config/OpenNOW/backup/1795479617-unresolved-allocation.json so this launch can allocate
+opennowlite: polling the allocation up to 300 times
+```
+
+The 22:56 blocker is now `backup/1795479617-unresolved-allocation.json`; the launch then sat
+in the vendor's free-tier queue for the 60 s the test allowed and was killed there (rc 124
+from the `timeout`'s own TERM), which left a fresh dead allocation that the next launch moves
+the same way. `backup/` also still holds the hand-moves the earlier audit items made
+(`1795463478-`, `1795463974-`, `1795465079-`, `1795465625-`, `1795466579-`,
+`1795474530-`), because the client moves the blocker and never removes one.
+
+Off the layer, the same move as a standalone replica proves the shape without a vendor in
+the way: rev 5's destination format refused three planted blockers one after another, while
+rev 6's moved them to `<epoch>-unresolved-allocation.json`,
+`<epoch>-unresolved-allocation.json.1` and `<epoch>-...json.2` inside a single second, and
+said nothing at all against a data directory that carries no blocker.
+
+### The end-to-end game launch on the client the seat runs
+
+The name route, run as the desktop uid with the core's own data directory, taken from the
+start of the move to the point where the vendor's own queue was the thing that stood in the
+way:
+
+```console
+# su weston -c 'timeout --signal=TERM 420 /usr/bin/opennow-lite --launch-game-name="dark and darker" 2>/tmp/dark-r217.txt; echo rc=$?'
+opennowlite: a failed allocation left its dead session at /home/weston/.config/OpenNOW/unresolved-allocation.json: it is moved into /home/weston/.config/OpenNOW/backup/1795480356-unresolved-allocation.json so this launch can allocate
+opennowlite: poll attempt=8  reply=1846 session=1 status=1 phase=preparing rtsps=2 waited=17s queue=8 etaMs=-1
+opennowlite: 8 queues left in the vendor's queue, no eta given, after 17s of wait on attempt 8
+opennowlite: poll attempt=12 reply=1846 session=1 status=1 phase=preparing rtsps=2 waited=25s queue=8 etaMs=-1
+```
+
+The move happened before the client asked for a session at all, so the launch that would
+otherwise have answered `session_allocation_recovery_required` went on and got a real
+session (`session=1`, `status=1`, `phase=preparing`). What stopped it was the free tier's own
+queue, which sat at 8 deep for the whole test; the 420 s the test allowed ended with the
+client's own TERM, and that leaves a fresh dead allocation (`Nov 24 00:32`) which the next
+launch moves the same way. `backup/` now holds both of these rounds' dead allocations
+(`1795479617-` and `1795480356-`) beside the six hand-moves the audit items made, and the
+client never removes one.
